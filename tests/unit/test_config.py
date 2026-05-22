@@ -69,9 +69,10 @@ class TestDefaults:
 
     def test_defaults_creates_all_rules(self):
         guardrails = CodingGuardrails.defaults()
-        assert guardrails.prerequisites is not None
-        assert guardrails.path_safety is not None
-        assert guardrails.command_safety is not None
-        assert guardrails.secrets is not None
-        assert guardrails.sequencing is not None
-        assert guardrails.tool_resolution is not None
+        for name in [
+            "prerequisites", "path_safety", "command_safety",
+            "network", "sensitive_files", "secrets",
+            "loop_detection", "session_budget",
+            "sequencing", "tool_resolution",
+        ]:
+            assert getattr(guardrails, name) is not None, f"{name} should be present"

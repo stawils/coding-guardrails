@@ -18,12 +18,14 @@ from coding_guardrails.rules.base import (
     ToolCall,
 )
 from coding_guardrails.rules.commands import CommandSafetyRule
+from coding_guardrails.rules.loop_detection import LoopDetectionRule
 from coding_guardrails.rules.network import NetworkRule
 from coding_guardrails.rules.path_safety import PathSafetyRule
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 from coding_guardrails.rules.secrets import SecretRule
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
+from coding_guardrails.rules.session_budget import SessionBudgetRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
 
 
@@ -46,6 +48,8 @@ class CodingGuardrails:
     network: NetworkRule | None = None
     sensitive_files: SensitiveFileRule | None = None
     secrets: SecretRule | None = None
+    loop_detection: LoopDetectionRule | None = None
+    session_budget: SessionBudgetRule | None = None
     sequencing: SequenceRule | None = None
     tool_resolution: ToolResolutionRule | None = None
 
@@ -141,6 +145,25 @@ class CodingGuardrails:
                 cooldown=seq_cfg.get("cooldown", 3),
             )
 
+        # Loop detection
+        loop_cfg = config.get("loop_detection", {})
+        if loop_cfg.get("enabled", True):
+            rules["loop_detection"] = LoopDetectionRule(
+                window=loop_cfg.get("window", 10),
+                nudge_threshold=loop_cfg.get("nudge_threshold", 3),
+                block_threshold=loop_cfg.get("block_threshold", 5),
+            )
+
+        # Session budget
+        budget_cfg = config.get("session_budget", {})
+        if budget_cfg.get("enabled", True):
+            rules["session_budget"] = SessionBudgetRule(
+                max_file_ops=budget_cfg.get("max_file_ops", 100),
+                max_commands=budget_cfg.get("max_commands", 200),
+                max_reads=budget_cfg.get("max_reads", 0),
+                warn_at=budget_cfg.get("warn_at", 0.8),
+            )
+
         # Tool resolution
         res_cfg = config.get("tool_resolution", {})
         if res_cfg.get("enabled", True):
@@ -163,6 +186,8 @@ class CodingGuardrails:
             network=NetworkRule(),
             sensitive_files=SensitiveFileRule(),
             secrets=SecretRule(),
+            loop_detection=LoopDetectionRule(),
+            session_budget=SessionBudgetRule(),
             sequencing=SequenceRule(),
             tool_resolution=ToolResolutionRule(),
         )
@@ -176,6 +201,8 @@ class CodingGuardrails:
             self.network,
             self.sensitive_files,
             self.secrets,
+            self.loop_detection,
+            self.session_budget,
             self.sequencing,
             self.tool_resolution,
         ] if r is not None]

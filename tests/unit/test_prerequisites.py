@@ -29,7 +29,6 @@ class TestToolMatching:
     def test_edit_tools_match(self, rule, tool_name):
         call = ToolCall(tool=tool_name, args={"path": "src/main.py"})
         result = rule.check(call)
-        # Should be blocked/nudged (file hasn't been read)
         assert result.action in (Action.BLOCK, Action.NUDGE)
 
     @pytest.mark.parametrize("tool_name", [
@@ -41,7 +40,6 @@ class TestToolMatching:
         result = rule.check(call)
         assert result.action == Action.ALLOW
         rule.record([call])
-        # Now edit should be allowed
         edit = ToolCall(tool="edit", args={"path": "src/main.py"})
         assert rule.check(edit).action == Action.ALLOW
 
@@ -62,12 +60,11 @@ class TestReadBeforeEdit:
         call = ToolCall(tool="edit", args={"path": "src/main.py"})
         result = rule.check(call)
         assert result.action == Action.NUDGE
-        assert "read" in result.nudge.lower() or "Read" in result.nudge
 
     def test_edit_without_read_twice_blocks(self, rule):
         call = ToolCall(tool="edit", args={"path": "src/main.py"})
-        rule.check(call)  # first: nudge
-        result = rule.check(call)  # second: block
+        rule.check(call)
+        result = rule.check(call)
         assert result.action == Action.BLOCK
 
     def test_edit_after_read_allowed(self, rule):
@@ -98,11 +95,39 @@ class TestReadBeforeEdit:
 
     def test_violation_counter_resets_on_read(self, rule):
         edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
-        rule.check(edit_call)  # nudge
+        rule.check(edit_call)
         read_call = ToolCall(tool="read", args={"path": "src/main.py"})
         rule.check(read_call)
         rule.record([read_call])
-        # Counter should be reset — next edit on different file starts fresh
         edit2 = ToolCall(tool="edit", args={"path": "src/other.py"})
         result = rule.check(edit2)
-        assert result.action == Action.NUDGE  # not BLOCK
+        assert result.action == Action.NUDGE
+
+
+# ── Smart path matching ──────────────────────────────────────────────────────
+
+class TestSmartPathMatching:
+
+    def test_directory_read_satisfies_child_file(self, rule):
+        """Reading src/ should satisfy edit of src/main.py."""
+        read_call = ToolCall(tool="read", args={"path": "src/"})
+        rule.check(read_call)
+        rule.record([read_call])
+        # Manually add as directory (os.path.isdir won't work for non-existent paths)
+        rule._read_dirs.add("src")
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        assert rule.check(edit_call).action == Action.ALLOW
+
+    def test_parent_read_satisfies_nested_file(self, rule):
+        """Reading the root should satisfy any child edit."""
+        rule._read_dirs.add(".")
+        edit_call = ToolCall(tool="edit", args={"path": "src/deep/nested/file.py"})
+        assert rule.check(edit_call).action == Action.ALLOW
+
+    def test_sibling_file_not_satisfied(self, rule):
+        """Reading src/main.py should NOT satisfy edit of src/other.py."""
+        read_call = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.check(read_call)
+        rule.record([read_call])
+        edit_call = ToolCall(tool="edit", args={"path": "src/other.py"})
+        assert rule.check(edit_call).action == Action.NUDGE

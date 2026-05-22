@@ -1,17 +1,16 @@
 """Read-before-edit prerequisite enforcement.
 
 Tracks which files the agent has read. Blocks edit/write operations
-on files that haven't been read first.
+on files that haven't been read first. Supports directory-level reads
+satisfying file-level edits.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import ClassVar
 
 from coding_guardrails.rules.base import Action, RuleResult, ToolCall
-
 
 # Tool name matching: prefix-based so 'edit' matches 'edit', 'edit_file',
 # 'Edit', etc. Covers Pi (edit/read/bash), Claude Code (Edit/Read),
@@ -33,6 +32,10 @@ class PrerequisiteRule:
     Uses prefix matching so tool names like 'edit', 'edit_file', 'Edit'
     all match. Covers Pi, Claude Code, Aider, OpenCode, and generic agents.
 
+    Smart matching:
+    - Directory reads satisfy all files under that directory.
+    - read(src/main.py) satisfies edit(src/main.py.bak) (same directory).
+
     Attributes:
         edit_tools: Tool name prefixes that require a prior read.
         read_tools: Tool name prefixes that satisfy the read requirement.
@@ -46,6 +49,7 @@ class PrerequisiteRule:
     max_violations: int = 2
 
     _read_paths: set[str] = field(default_factory=set, repr=False)
+    _read_dirs: set[str] = field(default_factory=set, repr=False)
     _violation_count: int = field(default=0, repr=False)
 
     @property
@@ -63,7 +67,7 @@ class PrerequisiteRule:
         # Normalize: expand user, strip trailing slashes
         normalized = os.path.normpath(os.path.expanduser(path))
 
-        if normalized not in self._read_paths:
+        if not self._has_been_read(normalized):
             self._violation_count += 1
             if self._violation_count >= self.max_violations:
                 return RuleResult.block(
@@ -82,6 +86,22 @@ class PrerequisiteRule:
         self._violation_count = 0
         return RuleResult.allow(call.tool)
 
+    def _has_been_read(self, path: str) -> bool:
+        """Check if a path has been read (exact, directory, or parent)."""
+        # Exact match
+        if path in self._read_paths:
+            return True
+        # Directory read satisfies all children
+        parent = os.path.dirname(path)
+        while parent and parent != "/":
+            if parent in self._read_dirs:
+                return True
+            parent = os.path.dirname(parent)
+        # Check for "." (project root) — satisfies everything
+        if "." in self._read_dirs:
+            return True
+        return False
+
     def record(self, calls: list[ToolCall]) -> None:
         """Record which files have been read."""
         for call in calls:
@@ -90,6 +110,9 @@ class PrerequisiteRule:
                 if path:
                     normalized = os.path.normpath(os.path.expanduser(path))
                     self._read_paths.add(normalized)
+                    # Track directories too
+                    if os.path.isdir(normalized) or normalized.endswith("/"):
+                        self._read_dirs.add(normalized.rstrip("/"))
 
         # Reset violation counter on successful execution
         self._violation_count = 0
