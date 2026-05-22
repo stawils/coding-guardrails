@@ -32,6 +32,7 @@ def main() -> None:
 @click.option("--no-rescue", is_flag=True, help="Disable Forge rescue parsing")
 @click.option("--no-guardrails", is_flag=True, help="Disable Layer 2 guardrails (Forge only)")
 @click.option("--serialize", is_flag=True, help="Serialize requests (single-GPU)")
+@click.option("--timeout", default=600, type=float, help="Backend request timeout in seconds (default: 600)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging")
 def serve(
     backend_url: str,
@@ -43,6 +44,7 @@ def serve(
     no_rescue: bool,
     no_guardrails: bool,
     serialize: bool,
+    timeout: float,
     verbose: bool,
 ) -> None:
     """Start the coding-guardrails proxy server."""
@@ -69,6 +71,7 @@ def serve(
             rescue_enabled=not no_rescue,
             guardrails_enabled=not no_guardrails,
             serialize=serialize,
+            timeout=timeout,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -84,6 +87,7 @@ async def _run_proxy(
     rescue_enabled: bool,
     guardrails_enabled: bool,
     serialize: bool,
+    timeout: float = 600.0,
 ) -> None:
     """Async proxy startup and run loop."""
     from forge.clients.llamafile import LlamafileClient
@@ -101,6 +105,7 @@ async def _run_proxy(
         gguf_path=model,
         base_url=base,
         mode="native",
+        timeout=timeout,
     )
 
     # Auto-detect context budget from backend
