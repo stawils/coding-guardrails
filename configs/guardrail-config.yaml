@@ -1,0 +1,75 @@
+# Default guardrail configuration
+# All rules enabled with sensible defaults.
+
+# Workspace root — path safety restricts file operations to this tree.
+# Set to "." for current directory, or an absolute path.
+workspace: "."
+
+path_safety:
+  enabled: true
+  # Paths that are always blocked (even inside workspace)
+  blocked_prefixes:
+    - "/etc/"
+    - "/sys/"
+    - "/proc/"
+    - "/boot/"
+    - "/dev/"
+    - "/root/"
+    - "/var/log/"
+  # Additional allowed paths outside workspace (e.g. system includes)
+  # allowed_prefixes: []
+
+command_safety:
+  enabled: true
+  strength: hard  # hard = block, soft = nudge only
+  blocked_commands:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - "mkfs"
+    - "dd if="
+    - ":(){ :|:& };:"
+    - "> /dev/sd"
+    - "shutdown"
+    - "reboot"
+    - "init 0"
+    - "init 6"
+    - "systemctl stop"
+
+secrets:
+  enabled: true
+  strength: hard  # hard = block, soft = mask and warn
+  mask_value: "[REDACTED]"
+  # Patterns: AWS keys, GitHub tokens, private keys, generic API keys
+
+prerequisites:
+  enabled: true
+  strength: soft  # soft = nudge first, hard = block until read
+  cooldown: 3     # turns before re-nudging
+  edit_tools:
+    - "write_file"
+    - "edit_file"
+    - "create_file"
+  read_tools:
+    - "read_file"
+    - "cat"
+
+sequencing:
+  enabled: true
+  strength: soft  # soft = suggest, hard = block until test runs
+  cooldown: 3
+  edit_tools:
+    - "write_file"
+    - "edit_file"
+    - "create_file"
+  test_tools:
+    - "bash"
+  test_commands:
+    - "pytest"
+    - "test"
+    - "cargo test"
+    - "go test"
+
+tool_resolution:
+  enabled: true
+  strength: soft  # soft = nudge only
+  # Nudges when tool results are empty, whitespace-only, or permission errors

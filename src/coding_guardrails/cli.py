@@ -1,0 +1,233 @@
+"""CLI entry point for coding-guardrails."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import signal
+import sys
+
+import click
+
+from coding_guardrails.middleware import CodingGuardrails
+
+
+@click.group()
+@click.version_option(package_name="coding-guardrails")
+def main() -> None:
+    """coding-guardrails — Safe, reliable local coding agent backend.
+
+    Layer 1: Forge (rescue parsing, retries, validation).
+    Layer 2: Coding guardrails (read-before-edit, path safety, etc.).
+    """
+
+
+@main.command()
+@click.option("--backend-url", required=True, help="URL of the llama-server backend (e.g. http://localhost:8080)")
+@click.option("--model", required=True, help="Model name for sampling defaults (e.g. Qwen3.6-35B-A3B-UD-Q3_K_M)")
+@click.option("--port", default=8081, type=int, help="Proxy listen port (default: 8081)")
+@click.option("--host", default="127.0.0.1", help="Proxy listen host")
+@click.option("--config", "config_path", help="Path to guardrail-config.yaml")
+@click.option("--max-retries", default=3, type=int, help="Max Forge retries per request (default: 3)")
+@click.option("--no-rescue", is_flag=True, help="Disable Forge rescue parsing")
+@click.option("--no-guardrails", is_flag=True, help="Disable Layer 2 guardrails (Forge only)")
+@click.option("--serialize", is_flag=True, help="Serialize requests (single-GPU)")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose logging")
+def serve(
+    backend_url: str,
+    model: str,
+    port: int,
+    host: str,
+    config_path: str | None,
+    max_retries: int,
+    no_rescue: bool,
+    no_guardrails: bool,
+    serialize: bool,
+    verbose: bool,
+) -> None:
+    """Start the coding-guardrails proxy server."""
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    click.echo(f"Starting coding-guardrails proxy on {host}:{port}")
+    click.echo(f"  Backend:    {backend_url}")
+    click.echo(f"  Model:      {model}")
+    click.echo(f"  Config:     {config_path or '(defaults)'}")
+    click.echo(f"  Guardrails: {'disabled' if no_guardrails else 'enabled'}")
+
+    try:
+        asyncio.run(_run_proxy(
+            backend_url=backend_url,
+            model=model,
+            port=port,
+            host=host,
+            config_path=config_path,
+            max_retries=max_retries,
+            rescue_enabled=not no_rescue,
+            guardrails_enabled=not no_guardrails,
+            serialize=serialize,
+        ))
+    except KeyboardInterrupt:
+        click.echo("\nStopped.")
+
+
+async def _run_proxy(
+    backend_url: str,
+    model: str,
+    port: int,
+    host: str,
+    config_path: str | None,
+    max_retries: int,
+    rescue_enabled: bool,
+    guardrails_enabled: bool,
+    serialize: bool,
+) -> None:
+    """Async proxy startup and run loop."""
+    from forge.clients.llamafile import LlamafileClient
+    from forge.context.manager import ContextManager
+    from forge.context.strategies import TieredCompact
+    from coding_guardrails.proxy.server import GuardrailProxyServer
+    from coding_guardrails.config import load_guardrail_config
+
+    # ── Forge Layer 1 setup ──
+    base = backend_url.rstrip("/")
+    if not base.endswith("/v1"):
+        base = base + "/v1"
+
+    client = LlamafileClient(
+        gguf_path=model,
+        base_url=base,
+        mode="native",
+    )
+
+    # Auto-detect context budget from backend
+    ctx_len = await client.get_context_length()
+    budget = ctx_len if ctx_len is not None else 8192
+    logging.info("Context budget: %d tokens", budget)
+
+    context_manager = ContextManager(
+        strategy=TieredCompact(),
+        budget_tokens=budget,
+    )
+
+    # ── Layer 2 guardrails setup ──
+    if guardrails_enabled:
+        guardrail_config = load_guardrail_config(config_path)
+        guardrails = CodingGuardrails.from_config(guardrail_config)
+        click.echo(f"  Rules:      {', '.join(r.name for r in guardrails._active_rules())}")
+    else:
+        guardrails = CodingGuardrails()  # No rules
+
+    # ── Start server ──
+    server = GuardrailProxyServer(
+        client=client,
+        context_manager=context_manager,
+        guardrails=guardrails,
+        host=host,
+        port=port,
+        serialize_requests=serialize,
+        max_retries=max_retries,
+        rescue_enabled=rescue_enabled,
+        model_name=model,
+    )
+    await server.start()
+    click.echo(f"\n  ✅ Proxy ready at http://{host}:{port}")
+    click.echo(f"  Point your agent at http://{host}:{port}/v1/chat/completions")
+
+    # Block until interrupted
+    try:
+        while True:
+            await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await server.stop()
+
+
+@main.command()
+@click.option("--backend-url", required=True, help="URL to probe")
+def probe(backend_url: str) -> None:
+    """Probe model + backend compatibility."""
+    import json
+
+    click.echo(f"Probing {backend_url}...")
+
+    try:
+        import urllib.request
+        base = backend_url.rstrip("/")
+        if not base.endswith("/v1"):
+            base = base + "/v1"
+
+        # Check /v1/models
+        resp = urllib.request.urlopen(f"{base}/models", timeout=10)
+        data = json.loads(resp.read())
+        models = data.get("data", [])
+        if models:
+            click.echo(f"  Models: {', '.join(m.get('id', '?') for m in models)}")
+        else:
+            click.echo("  Models: (none listed)")
+
+        # Check /health if available
+        try:
+            resp = urllib.request.urlopen(f"{base.replace('/v1', '')}/health", timeout=5)
+            click.echo(f"  Health: {resp.status} OK")
+        except Exception:
+            click.echo("  Health: (no /health endpoint)")
+
+        # Check props
+        try:
+            resp = urllib.request.urlopen(f"{base.replace('/v1', '')}/props", timeout=5)
+            props = json.loads(resp.read())
+            ctx = props.get("default_generation_settings", {}).get("n_ctx", "?")
+            click.echo(f"  Context: {ctx}")
+        except Exception:
+            click.echo("  Context: (couldn't detect)")
+
+        click.echo("\n  ✅ Backend reachable")
+
+    except Exception as exc:
+        click.echo(f"  ❌ Error: {exc}", err=True)
+        sys.exit(1)
+
+
+@main.command("models")
+def list_models() -> None:
+    """Show supported model profiles."""
+    from coding_guardrails.models.profiles import list_profiles
+
+    profiles = list_profiles()
+    click.echo("Supported models:\n")
+    for p in profiles:
+        arch = p.architecture.upper()
+        swe = f"{p.swe_bench_verified}% SWE-bench" if p.swe_bench_verified else ""
+        click.echo(f"  {p.name:<40s} ~{p.file_size_gb:.0f}GB  {swe}  ({arch})")
+
+    click.echo("\nBoot command (primary):")
+    primary = profiles[0] if profiles else None
+    if primary:
+        # Reconstruct flags with paired args
+        boot_parts = []
+        i = 0
+        while i < len(primary.boot_flags):
+            f = primary.boot_flags[i]
+            if (f.startswith("--") or f.startswith("-")) and i + 1 < len(primary.boot_flags) and not primary.boot_flags[i + 1].startswith("-"):
+                boot_parts.append(f"{f} {primary.boot_flags[i + 1]}")
+                i += 2
+            else:
+                boot_parts.append(f)
+                i += 1
+        click.echo("  llama-server -m <model>.gguf \\")
+        for part in boot_parts:
+            click.echo(f"    {part} \\")
+
+
+# Import and register the eval command
+from coding_guardrails.eval import eval_cmd
+main.add_command(eval_cmd, "eval")
+
+
+if __name__ == "__main__":
+    main()

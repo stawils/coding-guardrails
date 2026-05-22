@@ -1,0 +1,59 @@
+# coding-guardrails + llama-server stack
+#
+# Usage:
+#   GGUF_PATH=/path/to/model.gguf docker compose up
+#
+# The llama-server container needs GPU access. Adjust CUDA_VISIBLE_DEVICES
+# if you have multiple GPUs.
+
+services:
+  llama-server:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${GGUF_PATH:-./models}:/models:ro
+    command: >
+      --model /models/${GGUF_FILE:-model.gguf}
+      --jinja
+      --fit on
+      --flash-attn auto
+      --port 8080
+      --host 0.0.0.0
+      -c ${CONTEXT_SIZE:-16384}
+      --spec-type draft-mtp
+      -np 1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  coding-guardrails:
+    build: .
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./configs/guardrail-config.yaml:/etc/coding-guardrails/config.yaml:ro
+    command: >
+      serve
+      --backend-url http://llama-server:8080
+      --model ${MODEL_NAME:-Qwen3.6-35B-A3B-UD-Q3_K_M}
+      --port 8081
+      --host 0.0.0.0
+    depends_on:
+      llama-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
