@@ -50,8 +50,9 @@ jobs:
 
       - name: Check package
         run: |
-          uv pip install dist/*.whl --system
-          coding-guardrails --version
+          uv venv .venv
+          uv pip install dist/*.whl --python .venv/bin/python
+          .venv/bin/coding-guardrails --version
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
