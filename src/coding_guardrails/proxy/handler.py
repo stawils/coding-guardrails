@@ -194,7 +194,7 @@ async def handle_chat_completions(
 
     # ── Layer 1: Forge (rescue, validate, retry) ──
     logger.info(_banner("LAYER 1 · Forge"))
-    logger.info("🔧 Calling model (%d tools, %d msgs, max %d retries)", len(tool_names), len(messages), max_retries)
+    logger.info("🔧 %d tools, %d msgs", len(tool_names), len(messages))
     t0 = time.monotonic()
 
     validator = ResponseValidator(tool_names, rescue_enabled=rescue_enabled)
@@ -218,13 +218,22 @@ async def handle_chat_completions(
         return text_response_to_openai(raw, model=model_name)
 
     elapsed_l1 = time.monotonic() - t0
-    retries_used = error_tracker.attempt if hasattr(error_tracker, 'attempt') else 0
 
     if result is None:
         logger.info("⚠️  Model returned empty")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
+
+    # Log Layer 1 activity from result metadata
+    attempts = result.attempts
+    new_msgs = result.new_messages
+    if attempts > 1 or new_msgs:
+        logger.info("  🔄 %d attempt%s, %d retry msgs",
+                    attempts, "s" if attempts != 1 else "", len(new_msgs))
+        for nm in new_msgs:
+            mt = nm.metadata.type.value if hasattr(nm.metadata.type, 'value') else str(nm.metadata.type)
+            logger.info("     ↳ %s: %s", mt, _short(nm.content, 60))
 
     tool_calls = result.response
 
@@ -245,8 +254,9 @@ async def handle_chat_completions(
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
 
-    logger.info("✅ Layer 1 complete (%s, %d tool calls: %s)",
-                _fmt_elapsed(elapsed_l1), len(other_calls), _fmt_tools(other_calls))
+    attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
+    logger.info("✅ Layer 1 done %s (%s, %d tool calls: %s)",
+                attempts_tag, _fmt_elapsed(elapsed_l1), len(other_calls), _fmt_tools(other_calls))
 
     # ── Layer 2: Coding guardrails ──
     logger.info(_banner("LAYER 2 · Guardrails"))
