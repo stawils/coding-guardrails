@@ -18,9 +18,11 @@ from coding_guardrails.rules.base import (
     ToolCall,
 )
 from coding_guardrails.rules.commands import CommandSafetyRule
+from coding_guardrails.rules.network import NetworkRule
 from coding_guardrails.rules.path_safety import PathSafetyRule
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 from coding_guardrails.rules.secrets import SecretRule
+from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
 
@@ -41,6 +43,8 @@ class CodingGuardrails:
     prerequisites: PrerequisiteRule | None = None
     path_safety: PathSafetyRule | None = None
     command_safety: CommandSafetyRule | None = None
+    network: NetworkRule | None = None
+    sensitive_files: SensitiveFileRule | None = None
     secrets: SecretRule | None = None
     sequencing: SequenceRule | None = None
     tool_resolution: ToolResolutionRule | None = None
@@ -89,6 +93,28 @@ class CodingGuardrails:
                 require_confirmation=cmd_cfg.get("require_confirmation", None),
             )
 
+        # Network
+        net_cfg = config.get("network", {})
+        if net_cfg.get("enabled", True):
+            rules["network"] = NetworkRule(
+                block_uploads=net_cfg.get("block_uploads", True),
+                block_metadata=net_cfg.get("block_metadata", True),
+                block_private_ips=net_cfg.get("block_private_ips", False),
+                allowed_hosts=net_cfg.get("allowed_hosts", [
+                    "localhost", "127.0.0.1", "0.0.0.0", "::1",
+                ]),
+            )
+
+        # Sensitive files
+        sf_cfg = config.get("sensitive_files", {})
+        if sf_cfg.get("enabled", True):
+            extra = []
+            for entry in sf_cfg.get("extra_protected", []):
+                extra.append((entry["pattern"], entry["label"], entry.get("action", "block")))
+            rules["sensitive_files"] = SensitiveFileRule(
+                extra_protected=extra,
+            )
+
         # Secrets
         secrets_cfg = config.get("secrets", {})
         if secrets_cfg.get("enabled", True):
@@ -134,6 +160,8 @@ class CodingGuardrails:
             prerequisites=PrerequisiteRule(),
             path_safety=PathSafetyRule(),
             command_safety=CommandSafetyRule(),
+            network=NetworkRule(),
+            sensitive_files=SensitiveFileRule(),
             secrets=SecretRule(),
             sequencing=SequenceRule(),
             tool_resolution=ToolResolutionRule(),
@@ -145,6 +173,8 @@ class CodingGuardrails:
             self.prerequisites,
             self.path_safety,
             self.command_safety,
+            self.network,
+            self.sensitive_files,
             self.secrets,
             self.sequencing,
             self.tool_resolution,
