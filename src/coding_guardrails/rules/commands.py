@@ -121,7 +121,7 @@ class CommandSafetyRule:
         """Check a single command string. Returns None if safe."""
 
         # Hard blocks — exact matches (prefix-based)
-        for blocked in self.blocked:
+        for blocked in (self.blocked or []):
             if command.strip().startswith(blocked):
                 return RuleResult.block(
                     tool,
@@ -130,7 +130,7 @@ class CommandSafetyRule:
                 )
 
         # Hard blocks — pattern matches
-        for pattern in self.blocked_patterns:
+        for pattern in (self.blocked_patterns or []):
             if re.search(pattern, command, re.IGNORECASE):
                 return RuleResult.block(
                     tool,
@@ -139,7 +139,7 @@ class CommandSafetyRule:
                 )
 
         # Confirmation nudges
-        for confirm_cmd in self.require_confirmation:
+        for confirm_cmd in (self.require_confirmation or []):
             if confirm_cmd.lower() in command.lower():
                 return RuleResult.nudge(
                     tool,

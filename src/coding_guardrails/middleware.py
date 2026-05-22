@@ -91,11 +91,14 @@ class CodingGuardrails:
         # Command safety
         cmd_cfg = config.get("command_safety", {})
         if cmd_cfg.get("enabled", True):
-            rules["command_safety"] = CommandSafetyRule(
-                blocked=cmd_cfg.get("blocked", None),
-                blocked_patterns=cmd_cfg.get("blocked_patterns", None),
-                require_confirmation=cmd_cfg.get("require_confirmation", None),
-            )
+            kwargs = {}
+            if "blocked" in cmd_cfg:
+                kwargs["blocked"] = cmd_cfg["blocked"]
+            if "blocked_patterns" in cmd_cfg:
+                kwargs["blocked_patterns"] = cmd_cfg["blocked_patterns"]
+            if "require_confirmation" in cmd_cfg:
+                kwargs["require_confirmation"] = cmd_cfg["require_confirmation"]
+            rules["command_safety"] = CommandSafetyRule(**kwargs)
 
         # Network
         net_cfg = config.get("network", {})
