@@ -19,13 +19,13 @@ One command to go from "I have a GPU" to "I have a safe local coding agent backe
 pip install coding-guardrails
 
 # Start llama-server (your local LLM backend)
-llama-server -m model.gguf --jinja --fit on --flash-attn auto \
-  --port 8080 -c 16384 --spec-type draft-mtp -np 1
+llama-server -m Qwen3.5-9B-UD-Q4_K_XL.gguf --jinja --flash-attn auto \
+  --port 8080 -c 200000 --spec-type draft-mtp -np 1
 
 # Start the proxy
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
-  --model Qwen3.6-35B-A3B-UD-Q3_K_M \
+  --model Qwen3.5-9B-UD-Q4_K_XL \
   --port 8081
 
 # Point your agent at http://localhost:8081/v1
@@ -48,12 +48,13 @@ All rules are configurable. See [docs/rules.md](docs/rules.md).
 
 ## Supported Models
 
-Optimized for the **Qwen 3.6** family with llama-server:
+Optimized for consumer GPUs (24 GB VRAM) with llama-server:
 
-| Model | VRAM | Context | SWE-bench |
-|---|---|---|---|
-| **Qwen3.6-35B-A3B Q3_K_M** ⭐ | 21.6 GB | 16K | 73.4% |
-| Qwen3.6-27B Q4_K_M | 22.0 GB | 4K | 77.2% |
+| Model | VRAM | Context | Speed | Notes |
+|---|---|---|---|---|
+| **Qwen3.5-9B** ⭐ | 18 GB | **200K** | ~53 tok/s | Dense, MTP, best quality |
+| **Gemma 4 26B-A4B** | 21 GB | **200K** | ~50 tok/s | MoE, vision, Google |
+| Qwen3.6-35B-A3B | 22.5 GB | 32K | ~22 tok/s | Legacy |
 
 Works with any OpenAI-compatible backend. See [docs/models.md](docs/models.md).
 
