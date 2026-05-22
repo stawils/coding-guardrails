@@ -60,6 +60,61 @@ In VS Code settings, set:
 - Model: `Qwen3.6-35B-A3B-UD-Q3_K_M`
 - API Key: any non-empty string
 
+## Claude Code (Anthropic CLI)
+
+Point Claude Code at the proxy as a custom OpenAI-compatible provider:
+
+```bash
+# Set environment variables
+export OPENAI_API_KEY=not-needed
+export OPENAI_BASE_URL=http://localhost:8081/v1
+
+# Run Claude Code with the custom provider
+claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M
+```
+
+Or in your project's `.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "OPENAI_API_KEY": "not-needed",
+    "OPENAI_BASE_URL": "http://localhost:8081/v1"
+  }
+}
+```
+
+Then use `claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M`.
+
+## OpenCode (Terminal AI)
+
+Edit `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "opencode-guardrails/qwen",
+  "provider": {
+    "opencode-guardrails": {
+      "name": "Coding Guardrails",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://localhost:8081/v1",
+        "apiKey": "not-needed"
+      },
+      "models": {
+        "qwen": {
+          "name": "Qwen3.6-35B-A3B-UD-Q3_K_M",
+          "_launch": true
+        }
+      }
+    }
+  }
+}
+```
+
+Then run `opencode` — it will use the proxy automatically.
+
 ## Generic OpenAI-Compatible
 
 Any agent that supports custom OpenAI API base URLs should work. Set:

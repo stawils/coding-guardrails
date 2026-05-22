@@ -62,6 +62,8 @@ Works with any OpenAI-compatible backend. See [docs/models.md](docs/models.md).
 Point any OpenAI-compatible agent at `http://localhost:8081/v1`:
 
 - **Pi** — `api_base: "http://localhost:8081/v1"`
+- **Claude Code** — `OPENAI_BASE_URL=http://localhost:8081/v1`
+- **OpenCode** — add provider with `baseURL: http://localhost:8081/v1`
 - **Aider** — `OPENAI_API_BASE=http://localhost:8081/v1`
 - **Continue** — `"apiBase": "http://localhost:8081/v1"`
 - **Cline / Roo** — set API base in settings

@@ -1,0 +1,20 @@
+# Claude Code configuration
+# Point Claude Code at the coding-guardrails proxy.
+#
+# Usage:
+#   1. Start llama-server on :8080
+#   2. Start proxy: coding-guardrails serve --backend-url http://localhost:8080 --model <model> --port 8081
+#   3. Set env vars and run Claude Code
+
+# Option 1: Environment variables
+# export OPENAI_API_KEY=not-needed
+# export OPENAI_BASE_URL=http://localhost:8081/v1
+# claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M
+
+# Option 2: Project settings (.claude/settings.json)
+# {
+#   "env": {
+#     "OPENAI_API_KEY": "not-needed",
+#     "OPENAI_BASE_URL": "http://localhost:8081/v1"
+#   }
+# }
