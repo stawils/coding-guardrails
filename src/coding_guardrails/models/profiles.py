@@ -83,6 +83,33 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--fit", "on", "--flash-attn", "auto",
                      "--spec-type", "draft-mtp"],
     ),
+    "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
+        name="Qwen3.5-9B-UD-Q4_K_XL",
+        family="Qwen3.5",
+        quant="UD-Q4_K_XL (MTP)",
+        file_size_gb=5.7,
+        vram_required_gb=18.1,
+        context_tokens=200000,
+        architecture="dense",
+        active_params_b=9.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.7, "top_k": 20, "top_p": 0.9},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "--spec-type", "draft-mtp", "-np", "1"],
+    ),
+    "gemma-4-26B-A4B-it-UD-Q3_K_XL": ModelProfile(
+        name="gemma-4-26B-A4B-it-UD-Q3_K_XL",
+        family="Gemma4",
+        quant="UD-Q3_K_XL",
+        file_size_gb=12.0,
+        vram_required_gb=21.1,
+        context_tokens=200000,
+        architecture="moe",
+        active_params_b=4.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
 }
 # fmt: on
 
