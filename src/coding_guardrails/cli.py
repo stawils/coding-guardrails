@@ -90,7 +90,7 @@ async def _run_proxy(
     timeout: float = 600.0,
 ) -> None:
     """Async proxy startup and run loop."""
-    from forge.clients.llamafile import LlamafileClient
+    from coding_guardrails.proxy.client import SafeLlamafileClient
     from forge.context.manager import ContextManager
     from forge.context.strategies import TieredCompact
     from coding_guardrails.proxy.server import GuardrailProxyServer
@@ -101,11 +101,12 @@ async def _run_proxy(
     if not base.endswith("/v1"):
         base = base + "/v1"
 
-    client = LlamafileClient(
+    client = SafeLlamafileClient(
         gguf_path=model,
         base_url=base,
         mode="native",
         timeout=timeout,
+        default_max_tokens=8192,
     )
 
     # Auto-detect context budget from backend

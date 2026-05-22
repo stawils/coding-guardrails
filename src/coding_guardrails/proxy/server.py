@@ -180,9 +180,29 @@ class GuardrailProxyServer:
 
     async def _handle_models(self, writer: asyncio.StreamWriter) -> None:
         """GET /v1/models — returns model info."""
+        model_info: dict[str, Any] = {
+            "id": self._model_name,
+            "object": "model",
+            "owned_by": "coding-guardrails",
+        }
+
+        # Proxy the backend's model metadata (includes n_ctx)
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as http:
+                resp = await http.get(f"{self._client.base_url}/models")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for m in data.get("data", []):
+                        if "meta" in m:
+                            model_info["meta"] = m["meta"]
+                            break
+        except Exception:
+            pass
+
         body = json.dumps({
             "object": "list",
-            "data": [{"id": self._model_name, "object": "model"}],
+            "data": [model_info],
         })
         await self._send_json(writer, 200, body)
 
@@ -201,10 +221,11 @@ class GuardrailProxyServer:
         is_stream = body.get("stream", False)
         msg_count = len(body.get("messages", []))
         tool_count = len(body.get("tools", []))
-        logger.info(
-            "   stream=%s msgs=%d tools=%d model=%s",
-            is_stream, msg_count, tool_count, body.get("model", "?"),
-        )
+        logger.info("")
+        logger.info("━" * 60)
+        logger.info(">> POST /v1/chat/completions")
+        logger.info("   msgs=%d tools=%d stream=%s model=%s",
+                    msg_count, tool_count, is_stream, body.get("model", "?"))
 
         if self._serialize:
             item = _QueueItem(body=body)

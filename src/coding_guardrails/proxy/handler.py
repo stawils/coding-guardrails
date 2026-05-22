@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from forge.clients.base import LLMClient
@@ -34,7 +35,36 @@ from coding_guardrails.rules.base import ToolCall as GuardrailToolCall
 
 logger = logging.getLogger("coding_guardrails.proxy")
 
+# ── Banner helpers ──────────────────────────────────────────────────────────
+
+_BANNER_WIDTH = 60
+
+
+def _banner(label: str, char: str = "─") -> str:
+    pad = _BANNER_WIDTH - len(label) - 4
+    left = pad // 2
+    right = pad - left
+    return f"{char * left} ▸ {label} ◂ {char * right}"
+
+
+def _short(msg: str, width: int = 80) -> str:
+    if len(msg) <= width:
+        return msg
+    return msg[:width - 3] + "..."
+
+
+def _fmt_tools(calls: list[ToolCall]) -> str:
+    parts = [f"{tc.tool}({','.join(f'{k}={_short(str(v),20)}' for k, v in list(tc.args.items())[:3])})" for tc in calls]
+    return " | ".join(parts)
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    if seconds < 1.0:
+        return f"{seconds * 1000:.0f}ms"
+    return f"{seconds:.1f}s"
+
 # OpenAI-compatible top-level body fields plumbed from inbound to client.
+# Note: max_tokens / n_predict are handled by SafeLlamafileClient, not here.
 _SAMPLING_FIELDS = (
     "temperature", "top_p", "top_k", "min_p",
     "repeat_penalty", "presence_penalty", "seed",
@@ -45,6 +75,15 @@ _SAMPLING_FIELDS = (
 def _extract_sampling(body: dict[str, Any]) -> dict[str, Any] | None:
     """Pull recognized sampling fields from the inbound request body."""
     extracted = {f: body[f] for f in _SAMPLING_FIELDS if f in body}
+    # Also forward max_tokens variants — SafeLlamafileClient handles them
+    for field in ("max_tokens", "max_completion_tokens", "n_predict"):
+        if field in body:
+            extracted[field] = body[field]
+    # Normalize: max_completion_tokens → max_tokens
+    if "max_completion_tokens" in extracted and "max_tokens" not in extracted:
+        extracted["max_tokens"] = extracted.pop("max_completion_tokens")
+    else:
+        extracted.pop("max_completion_tokens", None)
     return extracted or None
 
 
@@ -141,16 +180,23 @@ async def handle_chat_completions(
 
     # No tools → plain chat completion, pass through
     if not tool_specs:
-        logger.info("No tools, passing through to backend")
+        logger.info("💬 Plain text (no tools)")
+        t0 = time.monotonic()
         api_format = getattr(client, "api_format", "ollama")
         api_messages = fold_and_serialize(messages, api_format)
         response = await client.send(api_messages, tools=None, sampling=sampling)
+        elapsed = time.monotonic() - t0
         text = response.content if isinstance(response, TextResponse) else ""
+        logger.info("✅ Text response (%s, %d chars)", _fmt_elapsed(elapsed), len(text))
         if is_stream:
             return text_to_sse_events(text, model=model_name)
         return text_response_to_openai(text, model=model_name)
 
-    # ── Layer 1: Forge guardrails (rescue, validate, retry) ──
+    # ── Layer 1: Forge (rescue, validate, retry) ──
+    logger.info(_banner("LAYER 1 · Forge"))
+    logger.info("🔧 Calling model (%d tools, %d msgs, max %d retries)", len(tool_names), len(messages), max_retries)
+    t0 = time.monotonic()
+
     validator = ResponseValidator(tool_names, rescue_enabled=rescue_enabled)
     error_tracker = ErrorTracker(max_retries=max_retries)
 
@@ -166,12 +212,16 @@ async def handle_chat_completions(
         )
     except ToolCallError as exc:
         raw = exc.raw_response or ""
-        logger.warning("Layer 1 retries exhausted: %.120s", raw)
+        logger.warning("❌ Layer 1 failed after %d retries (%s)", max_retries, _short(raw, 80))
         if is_stream:
             return text_to_sse_events(raw, model=model_name)
         return text_response_to_openai(raw, model=model_name)
 
+    elapsed_l1 = time.monotonic() - t0
+    retries_used = error_tracker.attempt if hasattr(error_tracker, 'attempt') else 0
+
     if result is None:
+        logger.info("⚠️  Model returned empty")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
@@ -184,37 +234,50 @@ async def handle_chat_completions(
 
     if respond_calls and not other_calls:
         text = respond_calls[0].args.get("message", "")
-        logger.info("Stripping respond(), returning as text")
+        logger.info("📝 Model responded with text (%s)", _fmt_elapsed(elapsed_l1))
         if is_stream:
             return text_to_sse_events(text, model=model_name)
         return text_response_to_openai(text, model=model_name)
 
     if not other_calls:
+        logger.info("⚠️  No actionable tool calls")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
 
+    logger.info("✅ Layer 1 complete (%s, %d tool calls: %s)",
+                _fmt_elapsed(elapsed_l1), len(other_calls), _fmt_tools(other_calls))
+
     # ── Layer 2: Coding guardrails ──
+    logger.info(_banner("LAYER 2 · Guardrails"))
+    t1 = time.monotonic()
+
     guardrail_calls = [_forge_call_to_guardrail_call(tc) for tc in other_calls]
     guardrail_result = guardrails.check(guardrail_calls)
 
     # Record executed calls (for stateful rules like prerequisites)
     if guardrail_result.allowed:
         guardrails.record(guardrail_result.allowed)
+        for call in guardrail_result.allowed:
+            logger.info("  ✅ %s — allowed", call.tool)
 
-    # Log what happened
+    # Log blocks
     if guardrail_result.has_blocks:
         for block in guardrail_result.blocked:
-            logger.info(
-                "LAYER 2 BLOCK: tool=%s reason=%s",
-                block.tool, block.reason or block.nudge,
-            )
+            logger.info("  🚫 %s — BLOCKED [%s]", block.tool, block.reason or "policy violation")
+            logger.info("     ↳ %s", _short(block.nudge or "", 60))
+
+    # Log nudges
     if guardrail_result.has_nudges:
         for nudge in guardrail_result.nudges:
-            logger.info("LAYER 2 NUDGE: tool=%s", nudge.tool)
+            logger.info("  ⚠️  %s — nudged [%s]", nudge.tool, nudge.reason or "advisory")
+            logger.info("     ↳ %s", _short(nudge.nudge or "", 60))
+
+    elapsed_l2 = time.monotonic() - t1
 
     # If any call was hard-blocked, return block responses
     if guardrail_result.has_blocks:
+        logger.info("⛔ Request BLOCKED by Layer 2 (%s)", _fmt_elapsed(elapsed_l2))
         # Return the first block as the response with all nudges appended
         block = guardrail_result.blocked[0]
         nudge_text = block.nudge or "Action blocked by guardrails."
@@ -230,10 +293,8 @@ async def handle_chat_completions(
         # Return a block response — the agent sees this as guidance
         return _make_block_response(block.tool, nudge_text, model=model_name)
 
-    # All clear — return validated tool calls
-    # If there are nudges, log them (agent doesn't see them unless we inject)
-    # For now, nudges are advisory — we could inject them as system messages
-    # in a future iteration. For v0.1, they're logged only.
+    # All clear
+    logger.info("✅ Request PASSED (%s)", _fmt_elapsed(elapsed_l2))
 
     if is_stream:
         return tool_calls_to_sse_events(other_calls, model=model_name)
