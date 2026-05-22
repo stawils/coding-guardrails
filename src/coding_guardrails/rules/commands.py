@@ -1,7 +1,7 @@
 """Destructive command blocking.
 
 Blocks shell commands that could cause irreversible damage:
-rm -rf /, fork bombs, pipe-to-shell, format disks, etc.
+rm -rf /, fork bombs, pipe-to-shell, format disks, sudo, etc.
 """
 
 from __future__ import annotations
@@ -24,66 +24,77 @@ class CommandSafetyRule:
         command_args: Argument names that contain shell commands.
         blocked: Exact command prefixes that are always blocked.
         blocked_patterns: Regex patterns for dangerous commands.
-        require_confirmation: Commands that should trigger a confirmation nudge.
+        require_confirmation: Commands that trigger a confirmation nudge.
     """
 
     command_args: list[str] = field(default_factory=lambda: ["command", "cmd", "script"])
 
     blocked: list[str] = field(default_factory=lambda: [
+        # Filesystem destruction
         "rm -rf / ",
         "rm -rf /*",
         "rm -rf ~",
-        "rm -rf /*",
         "rm -rf ~/*",
         "dd if=",
         "mkfs.",
         ":(){ :|:& };:",
+        # Privilege escalation
+        "sudo ",
+        "sudo(",
+        "su -",
+        "su root",
+        # Service manipulation
+        "systemctl stop",
+        "systemctl disable",
+        "systemctl restart",
+        "systemctl mask",
+        "service stop",
+        "shutdown",
+        "reboot",
+        "init 0",
+        "init 6",
+        # Disk/device access
+        "> /dev/sd",
     ])
 
     blocked_patterns: list[str] = field(default_factory=lambda: [
+        # Permission escalation
         r"chmod\s+777\s+/",
+        r"chmod\s+666\s+/",
+        # Download + execute (pipe to shell)
         r"curl\s+.*\|\s*(ba)?sh",
         r"wget\s+.*\|\s*(ba)?sh",
+        # Download + execute (two-step)
+        r"curl\s+.*-o\s+\S+.*&&\s*(ba)?sh\s",
+        r"wget\s+.*-O\s+\S+.*&&\s*(ba)?sh\s",
+        # Eval/execute fetched content
+        r"eval\s+['\"]?\$?\(",
+        r"bash\s+-c\s+['\"]?\$?\(",
+        r"source\s+<\(",
+        r"\.\s+<\(",                            # dot-source via process substitution
+        r"exec\s+<\(",
+        # Disk/device redirect
         r">\s*/dev/sd[a-z]",
+        # Root filesystem removal (exact end)
         r"rm\s+-rf\s+/\s*$",
+        # Git destructive operations
+        r"git\s+clean\s+-fdx?",
+        r"git\s+reset\s+--hard",
+        r"git\s+checkout\s+--\s+\.",
+        r"git\s+branch\s+-[dD]\s+(main|master)",
+        r"git\s+push\s+.*--force",
+        # Credential theft
+        r"cat\s+/etc/shadow",
+        r"cat\s+/root/.ssh",
+        r"cp\s+/etc/shadow",
     ])
 
     require_confirmation: list[str] = field(default_factory=lambda: [
         "rm -rf",
-        "git push --force",
         "DROP TABLE",
+        "DELETE FROM",
+        "TRUNCATE",
     ])
-
-    _DEFAULTS_BLOCKED: ClassVar[list[str]] = [
-        "rm -rf / ",
-        "rm -rf /*",
-        "rm -rf ~",
-        "rm -rf /*",
-        "rm -rf ~/*",
-        "dd if=",
-        "mkfs.",
-        ":(){ :|:& };:",
-    ]
-    _DEFAULTS_PATTERNS: ClassVar[list[str]] = [
-        r"chmod\s+777\s+/",
-        r"curl\s+.*\|\s*(ba)?sh",
-        r"wget\s+.*\|\s*(ba)?sh",
-        r">\s*/dev/sd[a-z]",
-        r"rm\s+-rf\s+/\s*$",
-    ]
-    _DEFAULTS_CONFIRM: ClassVar[list[str]] = [
-        "rm -rf",
-        "git push --force",
-        "DROP TABLE",
-    ]
-
-    def __post_init__(self) -> None:
-        if self.blocked is None:
-            object.__setattr__(self, 'blocked', list(self._DEFAULTS_BLOCKED))
-        if self.blocked_patterns is None:
-            object.__setattr__(self, 'blocked_patterns', list(self._DEFAULTS_PATTERNS))
-        if self.require_confirmation is None:
-            object.__setattr__(self, 'require_confirmation', list(self._DEFAULTS_CONFIRM))
 
     @property
     def name(self) -> str:

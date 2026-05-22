@@ -1,114 +1,85 @@
 """Workflow sequencing — soft nudges for test-after-change.
 
 Suggests running tests after code edits. Soft by default (nudge, not block).
+Uses prefix matching so it works with any agent's tool naming convention.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import ClassVar
 
 from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.prerequisites import _tool_matches
+
+# Default trigger/suggest prefixes covering all major agents.
+_DEFAULT_EDIT_PREFIXES = ("edit", "write", "create")
+_DEFAULT_SUGGEST_PREFIXES = ("bash", "shell", "run", "exec")
 
 
 @dataclass
 class SequenceRule:
     """Suggest workflow steps after certain tool calls.
 
-    When the agent uses a trigger tool (e.g. edit_file), suggest
-    a follow-up tool (e.g. run_test) with configurable strength.
+    Uses prefix matching: trigger_prefixes="edit" matches 'edit',
+    'edit_file', 'Edit', etc.
 
     Attributes:
-        rules: List of (trigger, suggest, strength, nudge) dicts.
-            trigger: Tool name that triggers the suggestion.
-            suggest: Suggested follow-up tool name.
-            strength: "soft" (nudge) or "hard" (block until done).
-            nudge: Custom nudge message.
+        trigger_prefixes: Tool name prefixes that trigger the suggestion.
+        suggest_prefixes: Tool name prefixes that satisfy the suggestion.
+        strength: "soft" (nudge) or "hard" (block until done).
+        nudge: Nudge message shown to the agent.
         cooldown: Minimum number of calls between repeated nudges.
     """
 
-    rules: list[dict] = field(default_factory=lambda: [
-        {
-            "trigger": "edit_file",
-            "suggest": "bash",
-            "strength": "soft",
-            "nudge": "Consider running tests to verify your changes.",
-        },
-        {
-            "trigger": "write_file",
-            "suggest": "bash",
-            "strength": "soft",
-            "nudge": "Consider running tests to verify the new file.",
-        },
-    ])
+    trigger_prefixes: tuple[str, ...] = _DEFAULT_EDIT_PREFIXES
+    suggest_prefixes: tuple[str, ...] = _DEFAULT_SUGGEST_PREFIXES
+    strength: str = "soft"
+    nudge: str = "Consider running tests to verify your changes."
     cooldown: int = 3
 
-    _DEFAULTS_RULES: ClassVar[list[dict]] = [
-        {
-            "trigger": "edit_file",
-            "suggest": "bash",
-            "strength": "soft",
-            "nudge": "Consider running tests to verify your changes.",
-        },
-        {
-            "trigger": "write_file",
-            "suggest": "bash",
-            "strength": "soft",
-            "nudge": "Consider running tests to verify the new file.",
-        },
-    ]
-
-    def __post_init__(self) -> None:
-        if self.rules is None:
-            object.__setattr__(self, 'rules', list(self._DEFAULTS_RULES))
-
     _calls_since_nudge: int = field(default=0, repr=False)
-    _pending_suggestion: str | None = field(default=None, repr=False)
+    _pending: bool = field(default=False, repr=False)
 
     @property
     def name(self) -> str:
         return "sequencing"
 
     def check(self, call: ToolCall) -> RuleResult:
-        for rule in self.rules:
-            if call.tool == rule["trigger"]:
-                self._pending_suggestion = rule["suggest"]
-                self._calls_since_nudge = 0
+        # Trigger: agent just edited/wrote a file
+        if _tool_matches(call.tool, self.trigger_prefixes):
+            self._pending = True
+            self._calls_since_nudge = 0
 
-                if rule["strength"] == "hard":
-                    return RuleResult.block(
-                        call.tool,
-                        nudge=rule["nudge"],
-                        reason=f"hard sequence: {rule['trigger']} → {rule['suggest']}",
-                    )
+            if self.strength == "hard":
+                return RuleResult.block(
+                    call.tool,
+                    nudge=self.nudge,
+                    reason=f"hard sequence: {call.tool} → test",
+                )
 
-                # Soft nudge — allow the call but suggest follow-up
-                return RuleResult.allow(call.tool)
+            return RuleResult.allow(call.tool)
 
-            # Check if the agent is already doing the suggested action
-            if self._pending_suggestion and call.tool == self._pending_suggestion:
-                self._pending_suggestion = None
-                self._calls_since_nudge = 0
-                return RuleResult.allow(call.tool)
+        # Satisfaction: agent is running a command (might be tests)
+        if self._pending and _tool_matches(call.tool, self.suggest_prefixes):
+            self._pending = False
+            self._calls_since_nudge = 0
+            return RuleResult.allow(call.tool)
 
-        # If we have a pending suggestion and cooldown has passed, nudge
-        if self._pending_suggestion:
+        # Cooldown nudge: agent hasn't run tests after edits
+        if self._pending:
             self._calls_since_nudge += 1
             if self._calls_since_nudge >= self.cooldown:
                 self._calls_since_nudge = 0
-                # Find the nudge text for the pending suggestion
-                for rule in self.rules:
-                    if rule["suggest"] == self._pending_suggestion:
-                        return RuleResult.nudge(
-                            call.tool,
-                            message=rule["nudge"],
-                        )
+                return RuleResult.nudge(
+                    call.tool,
+                    message=self.nudge,
+                )
 
         return RuleResult.allow(call.tool)
 
     def record(self, calls: list[ToolCall]) -> None:
         """Track if suggested follow-up was executed."""
         for call in calls:
-            if self._pending_suggestion and call.tool == self._pending_suggestion:
-                self._pending_suggestion = None
+            if self._pending and _tool_matches(call.tool, self.suggest_prefixes):
+                self._pending = False
                 self._calls_since_nudge = 0

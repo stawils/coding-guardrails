@@ -1,56 +1,77 @@
-"""Tests for config loading."""
-
-import os
-import tempfile
+"""Tests for guardrail config loading."""
 
 import pytest
 
-from coding_guardrails.config import load_config, load_guardrail_config
+from coding_guardrails.middleware import CodingGuardrails
 
 
-def test_load_valid_yaml():
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-        f.write("guardrails:\n  prerequisites:\n    enabled: true\n")
-        f.flush()
-        config = load_config(f.name)
-    assert config["guardrails"]["prerequisites"]["enabled"] is True
-    os.unlink(f.name)
+class TestFromConfig:
+
+    def test_empty_config_loads_all_defaults(self):
+        guardrails = CodingGuardrails.from_config({})
+        assert guardrails.prerequisites is not None
+        assert guardrails.path_safety is not None
+        assert guardrails.command_safety is not None
+        assert guardrails.secrets is not None
+        assert guardrails.sequencing is not None
+        assert guardrails.tool_resolution is not None
+
+    def test_disable_individual_rules(self):
+        cfg = {
+            "prerequisites": {"enabled": False},
+            "sequencing": {"enabled": False},
+        }
+        guardrails = CodingGuardrails.from_config(cfg)
+        assert guardrails.prerequisites is None
+        assert guardrails.sequencing is None
+        assert guardrails.command_safety is not None
+
+    def test_prerequisites_custom_tools(self):
+        cfg = {
+            "prerequisites": {
+                "edit_tools": ["modify", "update"],
+                "read_tools": ["inspect", "view"],
+                "max_violations": 5,
+            }
+        }
+        guardrails = CodingGuardrails.from_config(cfg)
+        assert guardrails.prerequisites.edit_tools == ("modify", "update")
+        assert guardrails.prerequisites.read_tools == ("inspect", "view")
+        assert guardrails.prerequisites.max_violations == 5
+
+    def test_sequencing_custom_config(self):
+        cfg = {
+            "sequencing": {
+                "trigger_tools": ["modify", "patch"],
+                "suggest_tools": ["test", "validate"],
+                "strength": "hard",
+                "cooldown": 5,
+            }
+        }
+        guardrails = CodingGuardrails.from_config(cfg)
+        assert guardrails.sequencing.trigger_prefixes == ("modify", "patch")
+        assert guardrails.sequencing.suggest_prefixes == ("test", "validate")
+        assert guardrails.sequencing.strength == "hard"
+        assert guardrails.sequencing.cooldown == 5
+
+    def test_secrets_action_block(self):
+        cfg = {"secrets": {"strength": "hard"}}
+        guardrails = CodingGuardrails.from_config(cfg)
+        assert guardrails.secrets.action == "block"
+
+    def test_secrets_action_mask(self):
+        cfg = {"secrets": {"strength": "soft"}}
+        guardrails = CodingGuardrails.from_config(cfg)
+        assert guardrails.secrets.action == "mask"
 
 
-def test_env_var_expansion():
-    os.environ["TEST_USER"] = "alice"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-        f.write("guardrails:\n  path_safety:\n    allowlist:\n      - /home/${TEST_USER}/\n")
-        f.flush()
-        config = load_config(f.name)
-    assert config["guardrails"]["path_safety"]["allowlist"][0] == "/home/alice/"
-    os.unlink(f.name)
-    del os.environ["TEST_USER"]
+class TestDefaults:
 
-
-def test_load_missing_file():
-    with pytest.raises(FileNotFoundError):
-        load_config("/nonexistent/config.yaml")
-
-
-def test_load_guardrail_config():
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-        f.write("forge:\n  max_retries: 3\nguardrails:\n  secrets:\n    enabled: false\n")
-        f.flush()
-        config = load_guardrail_config(f.name)
-    assert config == {"secrets": {"enabled": False}}
-    os.unlink(f.name)
-
-
-def test_load_guardrail_config_none():
-    config = load_guardrail_config(None)
-    assert config == {}
-
-
-def test_empty_yaml():
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-        f.write("")
-        f.flush()
-        config = load_config(f.name)
-    assert config == {}
-    os.unlink(f.name)
+    def test_defaults_creates_all_rules(self):
+        guardrails = CodingGuardrails.defaults()
+        assert guardrails.prerequisites is not None
+        assert guardrails.path_safety is not None
+        assert guardrails.command_safety is not None
+        assert guardrails.secrets is not None
+        assert guardrails.sequencing is not None
+        assert guardrails.tool_resolution is not None

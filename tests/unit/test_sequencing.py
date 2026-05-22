@@ -1,77 +1,88 @@
-"""Tests for the sequencing rule (test-after-change nudges)."""
+"""Tests for the sequencing rule."""
+
+import pytest
 
 from coding_guardrails.rules.base import Action, ToolCall
 from coding_guardrails.rules.sequencing import SequenceRule
 
 
-def test_edit_triggers_allow_with_pending():
-    rule = SequenceRule()
-    call = ToolCall(tool="edit_file", args={"path": "/home/user/main.py"})
-    result = rule.check(call)
-    # Edit is allowed, but a suggestion is pending
-    assert result.action == Action.ALLOW
+@pytest.fixture
+def rule():
+    return SequenceRule()
 
 
-def test_bash_after_edit_resolves_suggestion():
-    rule = SequenceRule()
-
-    # Edit triggers pending suggestion
-    rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/main.py"}))
-
-    # Running tests resolves it
-    rule.record([ToolCall(tool="bash", args={"command": "pytest"})])
-
-    # No more pending suggestion
-    call = ToolCall(tool="read_file", args={"path": "/home/user/other.py"})
-    result = rule.check(call)
-    assert result.action == Action.ALLOW
+@pytest.fixture
+def rule_hard():
+    return SequenceRule(strength="hard")
 
 
-def test_hard_strength_blocks():
-    rule = SequenceRule(rules=[
-        {
-            "trigger": "edit_file",
-            "suggest": "bash",
-            "strength": "hard",
-            "nudge": "Run tests after editing.",
-        },
+class TestToolMatching:
+    """Verify prefix matching works for all agent tool naming conventions."""
+
+    @pytest.mark.parametrize("tool_name", [
+        "edit", "edit_file", "Edit", "write", "write_file", "Write",
+        "create", "create_file",
     ])
-    call = ToolCall(tool="edit_file", args={"path": "/home/user/main.py"})
-    result = rule.check(call)
-    assert result.action == Action.BLOCK
+    def test_edit_triggers(self, rule, tool_name):
+        call = ToolCall(tool=tool_name, args={"path": "src/main.py"})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW  # soft mode: allow but track
 
-
-def test_soft_strength_allows():
-    rule = SequenceRule(rules=[
-        {
-            "trigger": "edit_file",
-            "suggest": "bash",
-            "strength": "soft",
-            "nudge": "Consider running tests.",
-        },
+    @pytest.mark.parametrize("tool_name", [
+        "bash", "shell", "run", "exec", "Execute", "RUN_COMMAND",
     ])
-    call = ToolCall(tool="edit_file", args={"path": "/home/user/main.py"})
-    result = rule.check(call)
-    assert result.action == Action.ALLOW
+    def test_bash_satisfies(self, rule, tool_name):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        bash = ToolCall(tool=tool_name, args={"command": "pytest"})
+        result = rule.check(bash)
+        assert result.action == Action.ALLOW
+        assert rule._pending is False  # suggestion cleared
 
 
-def test_cooldown_nudge():
-    rule = SequenceRule(cooldown=2)
+class TestSoftNudge:
 
-    # Edit triggers pending
-    rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/main.py"}))
+    def test_no_nudge_immediately_after_edit(self, rule):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        # Next call that isn't bash should pass (cooldown hasn't elapsed)
+        read = ToolCall(tool="read", args={"path": "src/other.py"})
+        result = rule.check(read)
+        assert result.action == Action.ALLOW
 
-    # First call after edit: no nudge yet (cooldown not reached)
-    result = rule.check(ToolCall(tool="read_file", args={"path": "/home/user/test.py"}))
-    assert result.action == Action.ALLOW
+    def test_nudge_after_cooldown(self, rule):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        # Burn through cooldown
+        for i in range(rule.cooldown):
+            read = ToolCall(tool="read", args={"path": f"file{i}.py"})
+            result = rule.check(read)
+        # Should nudge now
+        assert result.action == Action.NUDGE
+        assert "test" in result.nudge.lower()
 
-    # Second call: cooldown reached, should nudge
-    result = rule.check(ToolCall(tool="read_file", args={"path": "/home/user/other.py"}))
-    assert result.action == Action.NUDGE
-    assert "test" in result.nudge.lower()
+    def test_bash_clears_pending(self, rule):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        bash = ToolCall(tool="bash", args={"command": "pytest"})
+        rule.check(bash)
+        # No pending anymore — further reads should not nudge
+        read = ToolCall(tool="read", args={"path": "x.py"})
+        for _ in range(rule.cooldown + 1):
+            result = rule.check(read)
+        assert result.action == Action.ALLOW
 
 
-def test_unrelated_tool_no_effect():
-    rule = SequenceRule()
-    result = rule.check(ToolCall(tool="bash", args={"command": "ls"}))
-    assert result.action == Action.ALLOW
+class TestHardMode:
+
+    def test_hard_mode_blocks(self, rule_hard):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        result = rule_hard.check(edit)
+        assert result.action == Action.BLOCK
+
+    def test_record_clears_pending(self, rule):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        bash = ToolCall(tool="bash", args={"command": "pytest"})
+        rule.record([bash])
+        assert rule._pending is False

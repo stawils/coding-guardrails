@@ -1,77 +1,108 @@
-"""Tests for the prerequisites rule (read-before-edit)."""
+"""Tests for the prerequisites rule."""
+
+import pytest
 
 from coding_guardrails.rules.base import Action, ToolCall
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 
 
-def test_edit_without_read_is_blocked():
-    rule = PrerequisiteRule()
-    call = ToolCall(tool="edit_file", args={"path": "/home/user/main.py"})
-
-    # First violation: nudge
-    result = rule.check(call)
-    assert result.action == Action.NUDGE
-    assert "read" in result.nudge.lower()
-
-    # Second violation: block (max_violations=2, so 2nd = block)
-    result = rule.check(call)
-    assert result.action == Action.BLOCK
+@pytest.fixture
+def rule():
+    return PrerequisiteRule()
 
 
-def test_edit_after_read_is_allowed():
-    rule = PrerequisiteRule()
-
-    # Record that the file was read
-    rule.record([ToolCall(tool="read_file", args={"path": "/home/user/main.py"})])
-
-    # Now edit should be allowed
-    result = rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/main.py"}))
-    assert result.action == Action.ALLOW
+@pytest.fixture
+def rule_strict():
+    return PrerequisiteRule(max_violations=1)
 
 
-def test_different_files_tracked_separately():
-    rule = PrerequisiteRule()
+# ── Prefix matching ──────────────────────────────────────────────────────────
 
-    # Read file A
-    rule.record([ToolCall(tool="read_file", args={"path": "/home/user/a.py"})])
+class TestToolMatching:
+    """Verify prefix matching works for all agent tool naming conventions."""
 
-    # Edit file A: allowed
-    result = rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/a.py"}))
-    assert result.action == Action.ALLOW
+    @pytest.mark.parametrize("tool_name", [
+        "edit", "edit_file", "Edit", "EditFile", "EDITOR",
+        "write", "write_file", "Write", "WRITE_FILE",
+        "create", "create_file", "Create",
+    ])
+    def test_edit_tools_match(self, rule, tool_name):
+        call = ToolCall(tool=tool_name, args={"path": "src/main.py"})
+        result = rule.check(call)
+        # Should be blocked/nudged (file hasn't been read)
+        assert result.action in (Action.BLOCK, Action.NUDGE)
 
-    # Edit file B (not read): nudge
-    result = rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/b.py"}))
-    assert result.action == Action.NUDGE
+    @pytest.mark.parametrize("tool_name", [
+        "read", "read_file", "Read", "READ_FILE",
+        "cat", "head", "tail", "less",
+    ])
+    def test_read_tools_record(self, rule, tool_name):
+        call = ToolCall(tool=tool_name, args={"path": "src/main.py"})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+        rule.record([call])
+        # Now edit should be allowed
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        assert rule.check(edit).action == Action.ALLOW
+
+    @pytest.mark.parametrize("tool_name", [
+        "bash", "shell", "run", "exec", "command",
+        "grep", "find", "ls",
+    ])
+    def test_unrelated_tools_pass(self, rule, tool_name):
+        call = ToolCall(tool=tool_name, args={"command": "ls"})
+        assert rule.check(call).action == Action.ALLOW
 
 
-def test_trailing_slash_normalization():
-    rule = PrerequisiteRule()
+# ── Read-before-edit enforcement ─────────────────────────────────────────────
 
-    # Read with trailing slash
-    rule.record([ToolCall(tool="read_file", args={"path": "/home/user/dir/"})])
+class TestReadBeforeEdit:
 
-    # Edit without trailing slash: should match
-    result = rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/dir"}))
-    assert result.action == Action.ALLOW
+    def test_edit_without_read_nudges(self, rule):
+        call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        result = rule.check(call)
+        assert result.action == Action.NUDGE
+        assert "read" in result.nudge.lower() or "Read" in result.nudge
 
+    def test_edit_without_read_twice_blocks(self, rule):
+        call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(call)  # first: nudge
+        result = rule.check(call)  # second: block
+        assert result.action == Action.BLOCK
 
-def test_unrelated_tool_always_allowed():
-    rule = PrerequisiteRule()
-    result = rule.check(ToolCall(tool="bash", args={"command": "ls"}))
-    assert result.action == Action.ALLOW
+    def test_edit_after_read_allowed(self, rule):
+        read_call = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.check(read_call)
+        rule.record([read_call])
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        assert rule.check(edit_call).action == Action.ALLOW
 
+    def test_edit_after_read_different_path_nudges(self, rule):
+        read_call = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.check(read_call)
+        rule.record([read_call])
+        edit_call = ToolCall(tool="edit", args={"path": "src/other.py"})
+        assert rule.check(edit_call).action == Action.NUDGE
 
-def test_violation_counter_resets_after_read():
-    rule = PrerequisiteRule()
+    def test_strict_blocks_immediately(self, rule_strict):
+        call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        result = rule_strict.check(call)
+        assert result.action == Action.BLOCK
 
-    # Two violations
-    call = ToolCall(tool="edit_file", args={"path": "/home/user/main.py"})
-    rule.check(call)  # nudge 1
-    rule.check(call)  # nudge 2
+    def test_path_normalization(self, rule):
+        read_call = ToolCall(tool="read", args={"path": "src/main.py/"})
+        rule.check(read_call)
+        rule.record([read_call])
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        assert rule.check(edit_call).action == Action.ALLOW
 
-    # Read the file — should reset
-    rule.record([ToolCall(tool="read_file", args={"path": "/home/user/main.py"})])
-
-    # Should be allowed now
-    result = rule.check(ToolCall(tool="edit_file", args={"path": "/home/user/main.py"}))
-    assert result.action == Action.ALLOW
+    def test_violation_counter_resets_on_read(self, rule):
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit_call)  # nudge
+        read_call = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.check(read_call)
+        rule.record([read_call])
+        # Counter should be reset — next edit on different file starts fresh
+        edit2 = ToolCall(tool="edit", args={"path": "src/other.py"})
+        result = rule.check(edit2)
+        assert result.action == Action.NUDGE  # not BLOCK

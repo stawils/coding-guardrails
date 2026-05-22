@@ -61,7 +61,13 @@ class CodingGuardrails:
         prereq_cfg = config.get("prerequisites", {})
         if prereq_cfg.get("enabled", True):
             rules["prerequisites"] = PrerequisiteRule(
-                rules=prereq_cfg.get("rules", None),
+                edit_tools=tuple(prereq_cfg.get("edit_tools", (
+                    "edit", "write", "create",
+                ))),
+                read_tools=tuple(prereq_cfg.get("read_tools", (
+                    "read", "cat", "head", "tail", "less",
+                ))),
+                match_arg=prereq_cfg.get("match_arg", "path"),
                 max_violations=prereq_cfg.get("max_violations", 2),
             )
 
@@ -98,7 +104,14 @@ class CodingGuardrails:
         seq_cfg = config.get("sequencing", {})
         if seq_cfg.get("enabled", True):
             rules["sequencing"] = SequenceRule(
-                rules=seq_cfg.get("rules", None),
+                trigger_prefixes=tuple(seq_cfg.get("trigger_tools", (
+                    "edit", "write", "create",
+                ))),
+                suggest_prefixes=tuple(seq_cfg.get("suggest_tools", (
+                    "bash", "shell", "run", "exec",
+                ))),
+                strength=seq_cfg.get("strength", "soft"),
+                nudge=seq_cfg.get("nudge", "Consider running tests to verify your changes."),
                 cooldown=seq_cfg.get("cooldown", 3),
             )
 
