@@ -36,16 +36,3 @@ class SafeLlamafileClient(LlamafileClient):
     def _apply_sampling(
         self, body: dict[str, Any], sampling: dict[str, Any] | None = None,
     ) -> None:
-        # Let Forge handle its own fields first
-        super()._apply_sampling(body, sampling)
-
-        # Forward our extra fields (max_tokens, n_predict)
-        for field in self._EXTRA_SAMPLING_FIELDS:
-            override = (sampling or {}).get(field)
-            if override is not None:
-                body[field] = override
-                break  # First match wins (max_tokens preferred over n_predict)
-
-        # Safety net: if nobody set any cap, inject a default
-        if "max_tokens" not in body and "n_predict" not in body:
-            body["max_tokens"] = self._default_max_tokens

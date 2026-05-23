@@ -168,13 +168,52 @@ async def handle_chat_completions(
     model_name = body.get("model", "coding-guardrails")
     sampling = _extract_sampling(body)
 
+    # Preprocess messages to fix patterns that confuse local models.
+    # Pi sends empty user messages ("\n") as "continue" signals and includes
+    # assistant text responses in history. Both cause Qwen3.5-9B to return
+    # text instead of tool calls. Fix: replace empty users, strip assistant text.
+    if request_tools:
+        cleaned = []
+        for m in openai_messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            tc = m.get("tool_calls")
+
+            # Replace empty/trivial user messages
+            if role == "user" and (not content or (isinstance(content, str) and content.strip() == "")):
+                m = {**m, "content": "Continue working."}
+
+            # Remove assistant text-only responses (no tool_calls)
+            # These teach the model to respond with text
+            if role == "assistant" and not tc and isinstance(content, str) and content.strip():
+                continue
+
+            cleaned.append(m)
+        openai_messages = cleaned
+
+    # Inject tool-call enforcement into system prompt.
+    _TOOL_ENFORCEMENT = (
+        "CRITICAL: You MUST always respond by calling bash, read, edit, or write. "
+        "Never respond with plain text. "
+        "If unsure what to do, call bash with 'echo ready'."
+    )
+    if openai_messages and request_tools:
+        first = openai_messages[0]
+        if first.get("role") == "system":
+            content = first.get("content", "")
+            if _TOOL_ENFORCEMENT not in content:
+                openai_messages[0] = {**first, "content": content + "\n\n" + _TOOL_ENFORCEMENT}
+        else:
+            openai_messages.insert(0, {"role": "system", "content": _TOOL_ENFORCEMENT})
+
     # Convert inbound
     messages = openai_to_messages(openai_messages)
     tool_specs = _extract_tool_specs(request_tools)
 
-    # Inject respond tool
-    if tool_specs and not any(s.name == RESPOND_TOOL_NAME for s in tool_specs):
-        tool_specs.append(respond_spec())
+    # Note: we do NOT inject Forge's respond() tool. With local models like
+    # Qwen3.5-9B, respond() becomes an escape hatch — the model calls respond()
+    # instead of action tools (bash, read, edit), causing high retry rates.
+    # Forge handles this gracefully: text responses pass through Layer 1 as-is.
 
     tool_names = [s.name for s in tool_specs]
 
