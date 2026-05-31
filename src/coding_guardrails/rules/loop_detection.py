@@ -79,7 +79,7 @@ class LoopDetectionRule:
                 call.tool,
                 nudge=f"You've called {call.tool} with the same arguments "
                 f"{count + 1} times. This isn't working. "
-                f"If the task is done, call respond() with your final answer. "
+                f"If the task is done, respond with a short text summary. "
                 f"Otherwise, try a completely different approach.",
                 reason=f"loop detected: {call.tool} repeated {count + 1}x",
             )
@@ -89,7 +89,7 @@ class LoopDetectionRule:
                 call.tool,
                 message=f"You've tried {call.tool} {count + 1} times with "
                 "the same arguments. If the task is complete, "
-                "call respond() with your answer. "
+                "respond with a short text summary. "
                 "Otherwise try a different approach.",
             )
 

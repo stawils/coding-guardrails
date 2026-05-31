@@ -246,17 +246,15 @@ async def run_inference_instrumented(
         # to call more tools). Passthrough here aborts the workflow.
         if isinstance(response, TextResponse):
             content = response.content.strip()
-            # Check if there are tool results in the conversation already
-            has_tool_results = any(
-                m.metadata.type == MessageType.TOOL_RESULT
-                for m in messages
-            )
-            if content and (len(content) > 50 or thinking) and not has_tool_results:
+            # Pass through substantive text as a final answer.
+            # The model read tools, got results, and is now summarizing.
+            # Only block passthrough if this is clearly mid-workflow
+            # (no thinking, very short response = confused model).
+            if content and len(content) > 30 and (len(content) > 100 or thinking):
                 logger.info(
-                    "  📝 Passing through substantive text (%d chars) instead of retrying",
+                    "  📝 Passing through text response (%d chars)",
                     len(content),
                 )
-                # Use the full content: thinking + text if both present
                 full_content = content
                 if thinking and thinking not in content:
                     full_content = f"{thinking}\n\n{content}"

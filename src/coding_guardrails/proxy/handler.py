@@ -222,8 +222,8 @@ async def handle_chat_completions(
     if _REAL_AGENT_TOOLS & tool_names_lower:
         enforcement = (
             "IMPORTANT: Respond by calling tools (bash, read, edit, write). "
-            "If you have completed the task and need to give a final answer, "
-            "call the respond tool. "
+            "If the task is complete and you have nothing left to do, "
+            "respond with a short plain text summary of what was done. "
             "If unsure what to do, call bash with 'echo ready'."
         )
         if openai_messages:
