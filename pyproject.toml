@@ -19,18 +19,17 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
+dependencies = [
+    "forge-guardrails>=0.7.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/stawils/coding-guardrails"
 Repository = "https://github.com/stawils/coding-guardrails"
 Issues = "https://github.com/stawils/coding-guardrails/issues"
 Changelog = "https://github.com/stawils/coding-guardrails/releases"
-
-dependencies = [
-    "forge-guardrails>=0.7.0",
-    "pyyaml>=6.0",
-    "click>=8.0",
-]
 
 [project.scripts]
 coding-guardrails = "coding_guardrails.cli:main"
