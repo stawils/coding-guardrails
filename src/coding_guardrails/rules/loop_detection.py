@@ -78,7 +78,9 @@ class LoopDetectionRule:
             return RuleResult.block(
                 call.tool,
                 nudge=f"You've called {call.tool} with the same arguments "
-                f"{count + 1} times. This isn't working — try a different approach.",
+                f"{count + 1} times. This isn't working. "
+                f"If the task is done, call respond() with your final answer. "
+                f"Otherwise, try a completely different approach.",
                 reason=f"loop detected: {call.tool} repeated {count + 1}x",
             )
 
@@ -86,7 +88,9 @@ class LoopDetectionRule:
             return RuleResult.nudge(
                 call.tool,
                 message=f"You've tried {call.tool} {count + 1} times with "
-                "the same arguments. Consider trying a different approach.",
+                "the same arguments. If the task is complete, "
+                "call respond() with your answer. "
+                "Otherwise try a different approach.",
             )
 
         # ── Check 2: Stagnation (cycling same few tools, different args) ──

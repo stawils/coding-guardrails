@@ -221,8 +221,9 @@ async def handle_chat_completions(
 
     if _REAL_AGENT_TOOLS & tool_names_lower:
         enforcement = (
-            "CRITICAL: You MUST always respond by calling bash, read, edit, or write. "
-            "Never respond with plain text. "
+            "IMPORTANT: Respond by calling tools (bash, read, edit, write). "
+            "If you have completed the task and need to give a final answer, "
+            "call the respond tool. "
             "If unsure what to do, call bash with 'echo ready'."
         )
         if openai_messages:
@@ -375,7 +376,9 @@ async def handle_chat_completions(
 
         if is_stream:
             return text_to_sse_events(nudge_text, model=model_name)
-        return _make_block_response(block.tool, nudge_text, model=model_name)
+        # Return as text so the agent sees the nudge directly.
+        # Empty-args tool-call blocks confuse agents into retrying.
+        return text_response_to_openai(nudge_text, model=model_name)
 
     # All clear
     logger.info("✅ Request PASSED (%s)", _fmt_elapsed(elapsed_l2))
