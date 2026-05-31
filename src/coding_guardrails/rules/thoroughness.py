@@ -99,15 +99,14 @@ class ThoroughnessRule:
         if len(non_terminal_used) < self.min_tools or ratio_used < self.min_ratio:
             unused = sorted(non_terminal_available - non_terminal_used)[:5]
             self._fire_count += 1
-            return RuleResult.block(
+            return RuleResult.nudge(
                 call.tool,
-                nudge=(
+                message=(
                     f"You've only used {len(non_terminal_used)} of "
                     f"{len(non_terminal_available)} available tools. "
-                    f"Gather more information before submitting. "
+                    f"Consider gathering more information before submitting. "
                     f"Tools not yet tried: {', '.join(unused)}."
                 ),
-                reason=f"thoroughness: only {len(non_terminal_used)}/{len(non_terminal_available)} tools explored",
             )
 
         return RuleResult.allow(call.tool)
