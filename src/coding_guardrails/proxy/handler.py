@@ -17,7 +17,8 @@ from typing import Any
 
 from forge.clients.base import LLMClient
 from forge.context.manager import ContextManager
-from forge.core.inference import fold_and_serialize, run_inference
+from forge.core.inference import fold_and_serialize
+from coding_guardrails.proxy.layer1 import run_inference_instrumented as run_inference
 from forge.core.workflow import ToolCall, ToolSpec, TextResponse
 from forge.errors import ToolCallError
 from forge.guardrails import ErrorTracker, ResponseValidator
@@ -168,6 +169,23 @@ async def handle_chat_completions(
     model_name = body.get("model", "coding-guardrails")
     sampling = _extract_sampling(body)
 
+    # Reset loop detection on new conversations.
+    # A new conversation has very few messages (system + user = 2).
+    # This prevents cross-contamination between independent requests
+    # (e.g., Forge eval runs, agent task switches).
+    if (
+        guardrails.loop_detection
+        and len(openai_messages) <= 3
+        and not any(m.get("role") == "tool" for m in openai_messages)
+    ):
+        guardrails.loop_detection.reset()
+    if (
+        guardrails.thoroughness
+        and len(openai_messages) <= 3
+        and not any(m.get("role") == "tool" for m in openai_messages)
+    ):
+        guardrails.thoroughness.reset()
+
     # Preprocess messages to fix patterns that confuse local models.
     # Pi sends empty user messages ("\n") as "continue" signals and includes
     # assistant text responses in history. Both cause Qwen3.5-9B to return
@@ -191,20 +209,30 @@ async def handle_chat_completions(
             cleaned.append(m)
         openai_messages = cleaned
 
-    # Inject tool-call enforcement into system prompt.
-    _TOOL_ENFORCEMENT = (
-        "CRITICAL: You MUST always respond by calling bash, read, edit, or write. "
-        "Never respond with plain text. "
-        "If unsure what to do, call bash with 'echo ready'."
-    )
-    if openai_messages and request_tools:
-        first = openai_messages[0]
-        if first.get("role") == "system":
-            content = first.get("content", "")
-            if _TOOL_ENFORCEMENT not in content:
-                openai_messages[0] = {**first, "content": content + "\n\n" + _TOOL_ENFORCEMENT}
-        else:
-            openai_messages.insert(0, {"role": "system", "content": _TOOL_ENFORCEMENT})
+    # Inject tool-call enforcement for real coding agents.
+    # Only when the request includes coding tools (bash, read, edit, write).
+    _REAL_AGENT_TOOLS = {"bash", "read", "write", "edit"}
+    tool_names_lower = set()
+    if request_tools:
+        for t in request_tools:
+            fname = t.get("function", {}).get("name", "")
+            if fname:
+                tool_names_lower.add(fname.lower())
+
+    if _REAL_AGENT_TOOLS & tool_names_lower:
+        enforcement = (
+            "CRITICAL: You MUST always respond by calling bash, read, edit, or write. "
+            "Never respond with plain text. "
+            "If unsure what to do, call bash with 'echo ready'."
+        )
+        if openai_messages:
+            first = openai_messages[0]
+            if first.get("role") == "system":
+                content = first.get("content", "")
+                if enforcement not in content:
+                    openai_messages[0] = {**first, "content": content + "\n\n" + enforcement}
+            else:
+                openai_messages.insert(0, {"role": "system", "content": enforcement})
 
     # Convert inbound
     messages = openai_to_messages(openai_messages)
@@ -259,33 +287,37 @@ async def handle_chat_completions(
     elapsed_l1 = time.monotonic() - t0
 
     if result is None:
-        logger.info("⚠️  Model returned empty")
+        logger.info("⚠️  Model returned empty (attempts exhausted)")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
 
-    # Log Layer 1 activity from result metadata
     attempts = result.attempts
-    new_msgs = result.new_messages
-    if attempts > 1 or new_msgs:
-        logger.info("  🔄 %d attempt%s, %d retry msgs",
-                    attempts, "s" if attempts != 1 else "", len(new_msgs))
-        for nm in new_msgs:
-            mt = nm.metadata.type.value if hasattr(nm.metadata.type, 'value') else str(nm.metadata.type)
-            logger.info("     ↳ %s: %s", mt, _short(nm.content, 60))
+    response = result.response
 
-    tool_calls = result.response
+    # If the model returned text (not tool calls), pass it through to the agent.
+    if isinstance(response, TextResponse):
+        text = response.content
+        logger.info("📝 Model responded with text (%d chars, %s, %d attempt%s)",
+                    len(text), _fmt_elapsed(elapsed_l1),
+                    attempts, "s" if attempts != 1 else "")
+        if is_stream:
+            return text_to_sse_events(text, model=model_name)
+        return text_response_to_openai(text, model=model_name)
 
-    # Strip respond() calls
+    tool_calls = response
+
+    # If all calls are respond(), pass them through as tool calls.
+    # Forge's eval runner needs to see the terminal tool executed.
     respond_calls = [tc for tc in tool_calls if tc.tool == RESPOND_TOOL_NAME]
     other_calls = [tc for tc in tool_calls if tc.tool != RESPOND_TOOL_NAME]
 
     if respond_calls and not other_calls:
-        text = respond_calls[0].args.get("message", "")
-        logger.info("📝 Model responded with text (%s)", _fmt_elapsed(elapsed_l1))
-        if is_stream:
-            return text_to_sse_events(text, model=model_name)
-        return text_response_to_openai(text, model=model_name)
+        attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
+        logger.info("✅ Layer 1 done %s (%s, respond: %s)",
+                    attempts_tag, _fmt_elapsed(elapsed_l1),
+                    _short(respond_calls[0].args.get("message", respond_calls[0].args.get("answer", "")), 60))
+        return tool_calls_to_openai(respond_calls, model=model_name)
 
     if not other_calls:
         logger.info("⚠️  No actionable tool calls")
@@ -300,6 +332,12 @@ async def handle_chat_completions(
     # ── Layer 2: Coding guardrails ──
     logger.info(_banner("LAYER 2 · Guardrails"))
     t1 = time.monotonic()
+
+    # Feed conversation context to thoroughness rule
+    if guardrails.thoroughness:
+        available = {t.get("function", {}).get("name", "") for t in (request_tools or [])}
+        available.discard("")
+        guardrails.thoroughness.set_context(openai_messages, available)
 
     guardrail_calls = [_forge_call_to_guardrail_call(tc) for tc in other_calls]
     guardrail_result = guardrails.check(guardrail_calls)
@@ -327,11 +365,9 @@ async def handle_chat_completions(
     # If any call was hard-blocked, return block responses
     if guardrail_result.has_blocks:
         logger.info("⛔ Request BLOCKED by Layer 2 (%s)", _fmt_elapsed(elapsed_l2))
-        # Return the first block as the response with all nudges appended
         block = guardrail_result.blocked[0]
         nudge_text = block.nudge or "Action blocked by guardrails."
 
-        # Append any additional nudges
         if guardrail_result.has_nudges:
             extra = " ".join(n.nudge for n in guardrail_result.nudges if n.nudge)
             if extra:
@@ -339,7 +375,6 @@ async def handle_chat_completions(
 
         if is_stream:
             return text_to_sse_events(nudge_text, model=model_name)
-        # Return a block response — the agent sees this as guidance
         return _make_block_response(block.tool, nudge_text, model=model_name)
 
     # All clear

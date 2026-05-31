@@ -34,6 +34,7 @@ def main() -> None:
 @click.option("--serialize", is_flag=True, help="Serialize requests (single-GPU)")
 @click.option("--timeout", default=600, type=float, help="Backend request timeout in seconds (default: 600)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging")
+@click.option("--log-file", default=None, help="Also log to this file (for eval)")
 def serve(
     backend_url: str,
     model: str,
@@ -46,6 +47,7 @@ def serve(
     serialize: bool,
     timeout: float,
     verbose: bool,
+    log_file: str | None,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -53,6 +55,16 @@ def serve(
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+        logging.getLogger().addHandler(file_handler)
+    # Silence httpx/httpcore noise
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     click.echo(f"Starting coding-guardrails proxy on {host}:{port}")
     click.echo(f"  Backend:    {backend_url}")

@@ -26,6 +26,7 @@ from coding_guardrails.rules.secrets import SecretRule
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
+from coding_guardrails.rules.thoroughness import ThoroughnessRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
 
 
@@ -50,6 +51,7 @@ class CodingGuardrails:
     secrets: SecretRule | None = None
     loop_detection: LoopDetectionRule | None = None
     session_budget: SessionBudgetRule | None = None
+    thoroughness: ThoroughnessRule | None = None
     sequencing: SequenceRule | None = None
     tool_resolution: ToolResolutionRule | None = None
 
@@ -167,6 +169,14 @@ class CodingGuardrails:
                 warn_at=budget_cfg.get("warn_at", 0.8),
             )
 
+        # Thoroughness
+        thor_cfg = config.get("thoroughness", {})
+        if thor_cfg.get("enabled", True):
+            rules["thoroughness"] = ThoroughnessRule(
+                min_tools=thor_cfg.get("min_tools", 3),
+                cooldown=thor_cfg.get("cooldown", 2),
+            )
+
         # Tool resolution
         res_cfg = config.get("tool_resolution", {})
         if res_cfg.get("enabled", True):
@@ -191,6 +201,7 @@ class CodingGuardrails:
             secrets=SecretRule(),
             loop_detection=LoopDetectionRule(),
             session_budget=SessionBudgetRule(),
+            thoroughness=ThoroughnessRule(),
             sequencing=SequenceRule(),
             tool_resolution=ToolResolutionRule(),
         )
@@ -206,6 +217,7 @@ class CodingGuardrails:
             self.secrets,
             self.loop_detection,
             self.session_budget,
+            self.thoroughness,
             self.sequencing,
             self.tool_resolution,
         ] if r is not None]
