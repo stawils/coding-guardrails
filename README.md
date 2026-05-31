@@ -1,5 +1,9 @@
 # coding-guardrails
 
+[![PyPI](https://img.shields.io/pypi/v/coding-guardrails.svg)](https://pypi.org/project/coding-guardrails/)
+[![CI](https://github.com/stawils/coding-guardrails/actions/workflows/ci.yaml/badge.svg)](https://github.com/stawils/coding-guardrails/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 > Safe, reliable local coding agent backend. Open-source, pip-installable.
 
 **coding-guardrails** is a proxy that sits between your coding agent and a local LLM,
@@ -185,7 +189,40 @@ Runs Forge's 30-scenario eval suite (basic tool calling through advanced reasoni
 Results saved to `eval/runs/<timestamp>/` with full logs, JSONL results, and
 summary tables.
 
-**Latest results (Qwen3.5-9B): 93% accuracy (140/150), +9pp over Forge baseline.**
+**Latest results (Qwen3.5-9B, 5 runs × 30 scenarios): 93% accuracy (140/150), +9pp over Forge baseline.**
+
+| Scenario | Accuracy | Iterations |
+|---|---|---|
+| basic_2step | 100% | 2.0 |
+| sequential_3step | 100% | 3.0 |
+| error_recovery | 100% | 3.0 |
+| tool_selection | 100% | 3.0 |
+| argument_fidelity | 100% | 3.0 |
+| sequential_reasoning | 100% | 4.0 |
+| conditional_routing | 100% | 2.8 |
+| data_gap_recovery | 100% | 5.6 |
+| data_gap_recovery_extended | 0% | 5.4 |
+| argument_transformation | 80% | 3.8 |
+| inconsistent_api_recovery | 100% | 7.4 |
+| grounded_synthesis | 100% | 5.0 |
+| relevance_detection | 100% | 1.2 |
+| basic_2step_stateful | 100% | 2.0 |
+| sequential_3step_stateful | 100% | 3.0 |
+| error_recovery_stateful | 100% | 3.0 |
+| tool_selection_stateful | 100% | 3.0 |
+| argument_fidelity_stateful | 100% | 3.0 |
+| sequential_reasoning_stateful | 100% | 4.0 |
+| conditional_routing_stateful | 100% | 3.2 |
+| data_gap_recovery_stateful | 100% | 5.0 |
+| data_gap_recovery_extended_stateful | 40% | 4.4 |
+| argument_transformation_stateful | 80% | 4.2 |
+| inconsistent_api_recovery_stateful | 100% | 7.4 |
+| grounded_synthesis_stateful | 100% | 5.4 |
+| relevance_detection_stateful | 100% | 1.2 |
+| compaction_chain_baseline | 100% | 10.0 |
+| compaction_chain_p1 | 100% | 10.0 |
+| compaction_chain_p2 | 100% | 10.0 |
+| compaction_chain_p3 | 100% | 10.0 |
 
 ## Development
 
