@@ -5,11 +5,11 @@
 **coding-guardrails** is a proxy that sits between your coding agent and a local LLM,
 adding two layers of protection:
 
-1. **Forge (Layer 1)** — Rescue parsing, retries, validation. Makes local models
-   actually work for tool calling.
-2. **Coding Guardrails (Layer 2)** — 10 composable rules covering path safety,
+1. **Forge (Layer 1)** — Rescue parsing, retries, validation, thinking token
+   capture and injection on retry. Makes local models actually work for tool calling.
+2. **Coding Guardrails (Layer 2)** — 11 composable rules covering path safety,
    command blocking, network egress, sensitive file protection, secret masking,
-   loop detection, session budgets, and more.
+   loop detection, session budgets, thoroughness, and more.
 
 One command to go from "I have a GPU" to "I have a safe local coding agent backend."
 
@@ -46,6 +46,7 @@ That's it. Your agent sees a standard OpenAI-compatible API.
 | **Sensitive files** | Writes to .git/, CI, .ssh/ | `edit(".github/workflows/ci.yaml")` ❌ |
 | **Secret detection** | API keys, tokens, private keys | `bash("export AWS_SECRET_KEY=...")` ❌ |
 | **Session budget** | Ops exceeding limits | 100+ file edits in one session ❌ |
+| **Thoroughness** | Premature submission | Submit after 1 of 6 tools explored ❌ |
 
 ### Soft Nudges (best practices)
 
@@ -127,8 +128,8 @@ Pass with `--config guardrail-config.yaml`.
 ```
 Agent → coding-guardrails (:8081) → llama-server (:8080) → GPU
             │
-            ├─ Layer 1 (Forge): rescue, validate, retry
-            └─ Layer 2 (Guardrails): 10 composable rules
+            ├─ Layer 1 (Forge): rescue, validate, retry, thinking capture
+            └─ Layer 2 (Guardrails): 11 composable rules
                   ├─ path_safety
                   ├─ command_safety
                   ├─ network
@@ -137,6 +138,7 @@ Agent → coding-guardrails (:8081) → llama-server (:8080) → GPU
                   ├─ prerequisites
                   ├─ loop_detection
                   ├─ session_budget
+                  ├─ thoroughness
                   ├─ sequencing
                   └─ tool_resolution
 ```
@@ -158,11 +160,32 @@ docker run -p 8081:8081 ghcr.io/stawils/coding-guardrails:latest \
 
 ## Eval
 
+### Layer 2 Guardrails
+
 ```bash
 coding-guardrails eval --backend-url http://localhost:8081
 ```
 
 Runs scenarios from `eval/scenarios/` and reports pass/fail by category.
+
+### Forge 30-Scenario Benchmark
+
+```bash
+# Proxy mode (through guardrails)
+python eval/scripts/run_forge_eval.py --mode proxy --runs 5
+
+# Direct mode (LLM only, no proxy)
+python eval/scripts/run_forge_eval.py --mode direct --runs 5
+
+# Both (direct vs proxy comparison)
+python eval/scripts/run_forge_eval.py --mode both --runs 5
+```
+
+Runs Forge's 30-scenario eval suite (basic tool calling through advanced reasoning).
+Results saved to `eval/runs/<timestamp>/` with full logs, JSONL results, and
+summary tables.
+
+**Latest results (Qwen3.5-9B): 93% accuracy (140/150), +9pp over Forge baseline.**
 
 ## Development
 
@@ -173,7 +196,7 @@ uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
 # Run tests (233 tests)
-pytest tests/unit/ -v
+pytest tests/unit/ -q
 
 # Run against live backend
 pytest tests/integration/ -v -m integration
