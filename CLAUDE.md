@@ -154,3 +154,36 @@ Forge's published benchmark: ~84% accuracy. Our proxy: +9pp with zero regression
 - No hardcoded scenario-specific logic — guardrails must be general purpose
 - Use `edit` for targeted changes, `write` for new files or complete rewrites
 - Keep the proxy clean: no injection/annotation of messages for non-coding-agent requests
+
+## Versioning & Releases
+
+Uses [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`
+
+- **PATCH** (0.7.1): Bug fixes, no new features or API changes
+- **MINOR** (0.8.0): New features, new rules, backward-compatible
+- **MAJOR** (1.0.0): Breaking API changes
+
+### Release Process
+
+1. Update `version` in `pyproject.toml`
+2. Update README if needed (eval results, new rules, new features)
+3. Update CLAUDE.md if architecture changed
+4. Ensure all 233 tests pass: `pytest tests/unit/ -q`
+5. Commit: `git commit -m "vX.Y.Z: description"`
+6. Push: `git push`
+7. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+8. GitHub Actions auto-builds, tests, and publishes to PyPI
+
+### CI Pipeline
+
+- On every push to `main`: runs tests + lint
+- On tag `v*`: builds wheel, verifies CLI (`coding-guardrails --version`), publishes to PyPI
+- PyPI uses trusted publishing (OIDC), no API tokens needed
+
+### Refresh Local Install
+
+```bash
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+coding-guardrails --version  # verify
+```

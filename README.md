@@ -9,7 +9,7 @@
 **coding-guardrails** is a proxy that sits between your coding agent and a local LLM,
 adding two layers of protection:
 
-1. **Forge (Layer 1)** — Rescue parsing, retries, validation, thinking token
+1. **[Forge](https://github.com/antoinezambelli/forge) (Layer 1)** — Rescue parsing, retries, validation, thinking token
    capture and injection on retry. Makes local models actually work for tool calling.
 2. **Coding Guardrails (Layer 2)** — 11 composable rules covering path safety,
    command blocking, network egress, sensitive file protection, secret masking,
