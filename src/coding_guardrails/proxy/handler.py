@@ -314,11 +314,15 @@ async def handle_chat_completions(
     other_calls = [tc for tc in tool_calls if tc.tool != RESPOND_TOOL_NAME]
 
     if respond_calls and not other_calls:
+        # Convert respond() to text — most agents (Pi, Cline, etc.)
+        # don't have a respond tool. The model is saying "I'm done."
+        msg = respond_calls[0].args.get("message", respond_calls[0].args.get("answer", ""))
         attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
-        logger.info("✅ Layer 1 done %s (%s, respond: %s)",
-                    attempts_tag, _fmt_elapsed(elapsed_l1),
-                    _short(respond_calls[0].args.get("message", respond_calls[0].args.get("answer", "")), 60))
-        return tool_calls_to_openai(respond_calls, model=model_name)
+        logger.info("✅ Layer 1 done %s (%s, respond → text: %s)",
+                    attempts_tag, _fmt_elapsed(elapsed_l1), _short(msg, 60))
+        if is_stream:
+            return text_to_sse_events(msg, model=model_name)
+        return text_response_to_openai(msg, model=model_name)
 
     if not other_calls:
         logger.info("⚠️  No actionable tool calls")
