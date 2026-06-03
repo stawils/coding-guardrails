@@ -84,6 +84,39 @@ class TestToolMatching:
         assert result.action == Action.ALLOW
 
 
+class TestCaseInsensitiveProtection:
+    """Tests for case-insensitive protection against .GIT, .SSH, etc. bypass."""
+
+    @pytest.mark.parametrize("path", [
+        ".GIT/config",
+        ".GIT/hooks/pre-commit",
+        ".SSH/authorized_keys",
+        ".SSH/id_rsa",
+        ".GNUPG/private-keys-v1.d/key.key",
+        ".GITHUB/workflows/ci.yaml",
+        ".GITHUB/workflows/deploy.yml",
+        ".GITLAB-ci.yml",
+        ".jenkinsfile",
+        ".circleci/config.yml",
+    ])
+    def test_uppercase_bypass_blocked(self, rule, path):
+        result = _write(rule, path)
+        assert result.action == Action.BLOCK, f"Should block uppercase bypass: {path}"
+        assert "protected" in result.nudge.lower() or "blocked" in result.nudge.lower()
+
+    @pytest.mark.parametrize("path", [
+        ".Git/config",
+        ".Ssh/id_rsa",
+        ".Gnupg/private-keys-v1.d/key.key",
+        ".Github/workflows/ci.yaml",
+        ".Gitlab-ci.yml",
+    ])
+    def test_mixed_case_bypass_blocked(self, rule, path):
+        result = _write(rule, path)
+        assert result.action == Action.BLOCK, f"Should block mixed-case bypass: {path}"
+        assert "protected" in result.nudge.lower() or "blocked" in result.nudge.lower()
+
+
 class TestExtraProtected:
 
     def test_extra_protected_paths(self):

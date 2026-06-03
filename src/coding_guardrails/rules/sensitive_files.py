@@ -21,6 +21,7 @@ _WRITE_TOOLS = ("edit", "write", "create")
 
 # Protected path patterns: (regex, label, default_action)
 # action: "block" = always block, "nudge" = warn but allow
+# Patterns are matched case-insensitively (see check())
 _DEFAULT_PROTECTED: list[tuple[str, str, str]] = [
     # Git internals
     (r"^(\./)?\.git/", "Git internal files", "block"),
@@ -30,7 +31,7 @@ _DEFAULT_PROTECTED: list[tuple[str, str, str]] = [
     # CI/CD pipelines
     (r"^(\./)?\.github/workflows/", "GitHub Actions workflow", "block"),
     (r"^(\./)?\.gitlab-ci\.yml$", "GitLab CI config", "block"),
-    (r"^(\./)?Jenkinsfile$", "Jenkins pipeline", "block"),
+    (r"^(\./)?Jenkinsfile$|^(\./)?jenkinsfile$", "Jenkins pipeline", "block"),
     (r"^(\./)?\.circleci/", "CircleCI config", "block"),
     # Pre-commit / git hooks
     (r"^(\./)?\.pre-commit-config\.ya?ml$", "Pre-commit config", "block"),
@@ -76,10 +77,15 @@ class SensitiveFileRule:
         normalized = os.path.normpath(os.path.expanduser(path))
         # Keep relative form for matching
         rel = normalized.lstrip("./")
+        # Normalize to lowercase for additional case-insensitive protection
+        rel_lower = rel.lower()
+        normalized_lower = normalized.lower()
 
         all_protected = list(self.protected) + list(self.extra_protected)
         for pattern, label, action in all_protected:
-            if re.search(pattern, rel) or re.search(pattern, normalized):
+            if (re.search(pattern, rel_lower) or re.search(pattern, normalized_lower)) or (
+                re.search(pattern, rel) or re.search(pattern, normalized)
+            ):
                 if action == "block":
                     return RuleResult.block(
                         call.tool,
