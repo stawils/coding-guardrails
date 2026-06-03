@@ -70,9 +70,10 @@ Optimized for consumer GPUs (24 GB VRAM) with llama-server:
 
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
-| **Qwen3.5-9B** ⭐ | 18 GB | **200K** | ~53 tok/s | Dense, MTP, best quality |
+| **Qwen3.6-27B** ⭐ | 22 GB | **32K** | ~28 tok/s | Dense, MTP, best coding quality |
+| **Qwen3.5-9B** | 18 GB | **200K** | ~53 tok/s | Dense, MTP, fastest |
 | **Gemma 4 26B-A4B** | 21 GB | **200K** | ~50 tok/s | MoE, vision, Google |
-| Qwen3.6-35B-A3B | 22.5 GB | 32K | ~22 tok/s | Legacy |
+| Qwen3.6-35B-A3B | 22 GB | 16K | ~22 tok/s | Legacy |
 
 Works with any OpenAI-compatible backend. See [docs/models.md](docs/models.md).
 

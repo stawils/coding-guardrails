@@ -103,13 +103,13 @@ Layer 1 captures thinking tokens from the model's response. On retry (failed val
 source .venv/bin/activate
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
-  --model Qwen3.5-9B-UD-Q4_K_XL \
+  --model Qwen3.6-27B-UD-Q4_K_XL \
   --port 8081 -v
 ```
 
 ### Client Quirks
 
-- `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/Qwen3.5-9B-UD-Q4_K_XL.gguf`
+- `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - `recommended_sampling=False` — model not in Forge's registry
 
 ## Testing

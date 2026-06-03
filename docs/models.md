@@ -7,22 +7,37 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
-| **Qwen3.5-9B** ⭐ | UD-Q4_K_XL | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
+| **Qwen3.6-27B** ⭐ | UD-Q4_K_XL (MTP) | 17.0 GB | 22.4 GB | 32K | 27B | Dense | ~28 tok/s |
+| **Qwen3.5-9B** | UD-Q4_K_XL | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B-A4B** | UD-Q3_K_XL | 12.0 GB | 21.1 GB | **200K** | 4B | MoE | ~50 tok/s |
-| Qwen3.6-35B-A3B | Q3_K_M | 15.9 GB | 22.5 GB | 32K | 3.5B | MoE | ~22 tok/s |
 
-**Why Qwen3.5-9B is recommended:**
-- Dense 9B active params (2.5x more than MoE models)
+**Why Qwen3.6-27B is recommended:**
+- Dense 27B active params — best coding quality on consumer GPUs
+- Gated DeltaNet hybrid (48 DeltaNet + 16 GQA layers) — efficient KV cache
+- MTP draft tensors for ~1.5-2x speedup via speculative decoding
+- 77.2 SWE-bench Verified (top for this class)
+
+**Why Qwen3.5-9B as alternative:**
 - 200K context fits Pi's system prompt + long tool-use sessions
-- Built-in MTP for ~2x faster inference
-- Only 18 GB VRAM at 200K — 6 GB headroom
+- Only 18 GB VRAM — 6 GB headroom on 24 GB cards
+- ~53 tok/s — fastest option
 
 **Why Gemma 4 26B-A4B as alternative:**
 - Multimodal (vision support)
 - 200K context with Sliding Window Attention (efficient KV cache)
-- Google's latest architecture (Gated DeltaNet)
+- Only 21 GB VRAM
 
 ## Boot Commands
+
+### Qwen3.6-27B (32K context + MTP) ⭐
+
+```bash
+llama-server \
+  -m Qwen3.6-27B-UD-Q4_K_XL.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 32768 \
+  --spec-type draft-mtp -np 1
+```
 
 ### Qwen3.5-9B (200K context + MTP)
 
@@ -56,20 +71,22 @@ llama-server \
 **Key flags:**
 - `--jinja` — enables native function calling
 - `--flash-attn auto` — FlashAttention when available
-- `--spec-type draft-mtp` — multi-token prediction for ~2x faster inference
-- `-np 1` — single slot (maximizes GPU layers for MoE models)
-- `-c 200000` — 200K context window
+- `--spec-type draft-mtp` — multi-token prediction for ~1.5-2x faster inference
+- `-np 1` — single slot (maximizes GPU layers for dense models)
+- `-c 32768` — 32K context window
 
 ## All Profiles
 
-| Model | Quant | Size | VRAM | Context | Arch |
-|---|---|---|---|---|---|
-| Qwen3.5-9B | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | 200K | Dense |
-| Gemma 4 26B-A4B | UD-Q3_K_XL | 12.0 GB | 21.1 GB | 200K | MoE |
-| Qwen3.6-35B-A3B | Q3_K_M | 15.9 GB | 22.0 GB | 32K | MoE |
-| Qwen3.6-35B-A3B | Q4_K_S | 19.7 GB | 24.5 GB | 8K | MoE |
-| Qwen3.6-27B | Q4_K_M | 17.6 GB | 22.0 GB | 4K | Dense |
-| Qwen3.6-27B | Q4_K_S | 15.8 GB | 20.0 GB | 8K | Dense |
+| Model | Quant | Size | VRAM | Context | Arch | Notes |
+|---|---|---|---|---|---|---|
+| **Qwen3.6-27B** ⭐ | UD-Q4_K_XL (MTP) | 17.0 GB | 22.4 GB | 32K | Dense | Best coding quality |
+| Qwen3.6-27B | UD-Q3_K_XL (MTP) | 14.5 GB | 22.5 GB | 82K | Dense | Max context |
+| Qwen3.6-27B | Q4_K_M | 16.8 GB | 22.3 GB | 65K | Dense | Good balance |
+| Qwen3.6-27B | Q4_K_S | 15.9 GB | 21.4 GB | 65K | Dense | Lightest 27B |
+| Qwen3.5-9B | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | 200K | Dense | Fastest |
+| Gemma 4 26B-A4B | UD-Q3_K_XL | 12.0 GB | 21.1 GB | 200K | MoE | Vision |
+| Qwen3.6-35B-A3B | Q3_K_M | 15.9 GB | 22.0 GB | 16K | MoE | Legacy |
+| Qwen3.6-35B-A3B | Q4_K_S | 19.7 GB | 24.5 GB* | 8K | MoE | ⚠️ >24 GB |
 
 ## Adding New Models
 

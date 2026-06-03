@@ -55,33 +55,66 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--fit", "on", "--flash-attn", "auto",
                      "--spec-type", "draft-mtp"],
     ),
-    "Qwen_Qwen3.6-27B-Q4_K_M": ModelProfile(
-        name="Qwen_Qwen3.6-27B-Q4_K_M",
+    # ── Qwen3.6-27B (Gated DeltaNet hybrid, 64 layers: 48 DeltaNet + 16 GQA) ──
+    # KV cache: 64 KB/token (only 16 attention layers; DeltaNet has fixed recurrent
+    # state). MTP GGUFs include draft tensors for ~1.5-2x speedup via --spec-type
+    # draft-mtp. Context budgets assume 24GB GPU with 1.5GB CUDA overhead:
+    #   Q4_K_M  (16.8 GB): 65K ctx, 22.3/24 GB
+    #   UD-Q4_K_XL MTP (17.5 GB): 49K ctx, 22.8/24 GB
+    #   Q4_K_S  (15.9 GB): 65K ctx, 21.4/24 GB
+    "Qwen3.6-27B-Q4_K_M": ModelProfile(
+        name="Qwen3.6-27B-Q4_K_M",
         family="Qwen3.6",
         quant="Q4_K_M",
-        file_size_gb=17.6,
-        vram_required_gb=22.0,
-        context_tokens=4096,
+        file_size_gb=16.8,
+        vram_required_gb=22.3,
+        context_tokens=65536,
         architecture="dense",
         active_params_b=27.0,
         swe_bench_verified=77.2,
         sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
-        boot_flags=["--jinja", "--fit", "on", "--flash-attn", "auto",
-                     "--spec-type", "draft-mtp"],
+        boot_flags=["--jinja", "--flash-attn", "auto"],
     ),
-    "Qwen_Qwen3.6-27B-Q4_K_S": ModelProfile(
-        name="Qwen_Qwen3.6-27B-Q4_K_S",
+    "Qwen3.6-27B-UD-Q3_K_XL": ModelProfile(
+        name="Qwen3.6-27B-UD-Q3_K_XL",
+        family="Qwen3.6",
+        quant="UD-Q3_K_XL (MTP)",
+        file_size_gb=14.5,
+        vram_required_gb=22.5,
+        context_tokens=81920,
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=77.2,
+        sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "--spec-type", "draft-mtp", "-np", "1"],
+    ),
+    "Qwen3.6-27B-UD-Q4_K_XL": ModelProfile(
+        name="Qwen3.6-27B-UD-Q4_K_XL",
+        family="Qwen3.6",
+        quant="UD-Q4_K_XL (MTP)",
+        file_size_gb=17.0,
+        vram_required_gb=22.4,
+        context_tokens=32768,
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=77.2,
+        sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "--spec-type", "draft-mtp", "-np", "1"],
+    ),
+    "Qwen3.6-27B-Q4_K_S": ModelProfile(
+        name="Qwen3.6-27B-Q4_K_S",
         family="Qwen3.6",
         quant="Q4_K_S",
-        file_size_gb=15.8,
-        vram_required_gb=20.0,
-        context_tokens=8192,
+        file_size_gb=15.9,
+        vram_required_gb=21.4,
+        context_tokens=65536,
         architecture="dense",
         active_params_b=27.0,
         swe_bench_verified=77.2,
         sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
-        boot_flags=["--jinja", "--fit", "on", "--flash-attn", "auto",
-                     "--spec-type", "draft-mtp"],
+        boot_flags=["--jinja", "--flash-attn", "auto"],
     ),
     "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
         name="Qwen3.5-9B-UD-Q4_K_XL",
@@ -127,6 +160,6 @@ def get_profile(model_name: str) -> ModelProfile | None:
 
 def list_profiles() -> list[ModelProfile]:
     """Return all profiles with recommended first."""
-    # Recommended order: Q3_K_M MoE first (best for 24GB cards)
-    order = {"Qwen3.6-35B-A3B-UD-Q3_K_M": 0}
+    # Recommended order: Qwen3.6-27B UD-Q4_K_XL MTP first (best coding + speed)
+    order = {"Qwen3.6-27B-UD-Q4_K_XL": 0}
     return sorted(PROFILES.values(), key=lambda p: (order.get(p.name, 1), p.vram_required_gb))
