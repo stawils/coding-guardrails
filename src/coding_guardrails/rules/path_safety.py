@@ -39,6 +39,8 @@ class PathSafetyRule:
         "/root/.gnupg/",
     ])
     blocked_patterns: list[str] = field(default_factory=lambda: [
+        r"^[A-Za-z]:/",  # Windows absolute path (C:/, D:/, etc.)
+        r"^//",  # UNC path (//server/share)
         r"\.\./",
         r"\.\.\\",
     ])
@@ -54,6 +56,8 @@ class PathSafetyRule:
         "/root/.gnupg/",
     ]
     _DEFAULTS_PATTERNS: ClassVar[list[str]] = [
+        r"^[A-Za-z]:/",  # Windows absolute path
+        r"^//",  # UNC path
         r"\.{2}/",
         r"\.{2}\\\\",
     ]
@@ -89,9 +93,12 @@ class PathSafetyRule:
         # Resolve symlinks to prevent symlink-based escapes
         resolved = os.path.realpath(normalized)
 
+        # Normalize backslashes to forward slashes for consistent pattern matching
+        normalized_for_check = path.replace("\\", "/")
+
         # Check blocked patterns (path traversal)
         for pattern in self.blocked_patterns:
-            if re.search(pattern, path):
+            if re.search(pattern, normalized_for_check):
                 return RuleResult.block(
                     tool,
                     nudge=f"Path '{path}' contains a blocked traversal pattern.",

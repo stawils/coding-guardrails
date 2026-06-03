@@ -94,3 +94,45 @@ def test_no_path_arg_allowed():
     rule = PathSafetyRule()
     result = rule.check(ToolCall(tool="bash", args={"command": "ls"}))
     assert result.action == Action.ALLOW
+
+
+def test_windows_absolute_path_blocked():
+    """Windows absolute paths (C:\\, C:/) must be blocked."""
+    rule = PathSafetyRule()
+    # Test with backslash-separated Windows path (raw string: r"C:\\...\" becomes "C:\...\")
+    result = rule.check(ToolCall(tool="read_file", args={"path": r"C:\Windows\System32\config\sam"}))
+    assert result.action == Action.BLOCK
+    assert "traversal" in result.nudge.lower()
+
+
+def test_windows_absolute_path_with_forward_slash_blocked():
+    """Windows absolute paths with forward slashes (C:/) must be blocked."""
+    rule = PathSafetyRule()
+    result = rule.check(ToolCall(tool="read_file", args={"path": "C:/Windows/System32/config/sam"}))
+    assert result.action == Action.BLOCK
+    assert "traversal" in result.nudge.lower()
+
+
+def test_unc_path_blocked():
+    """UNC paths (\\server\\share and //server/share) must be blocked."""
+    rule = PathSafetyRule()
+    # Test with backslash-separated UNC path: r"\\server\share\file" becomes "\server\share\file"
+    # After normalize: "//server/share/file" matches "^//"
+    result = rule.check(ToolCall(tool="read_file", args={"path": r"\\server\share\file"}))
+    assert result.action == Action.BLOCK
+    assert "traversal" in result.nudge.lower()
+
+
+def test_unc_path_with_forward_slash_blocked():
+    """UNC paths with forward slashes (//server/share) must be blocked."""
+    rule = PathSafetyRule()
+    result = rule.check(ToolCall(tool="read_file", args={"path": "//server/share/file"}))
+    assert result.action == Action.BLOCK
+    assert "traversal" in result.nudge.lower()
+
+
+def test_windows_path_allowed_in_allowed_workspace():
+    """Windows-style paths inside the workspace are allowed."""
+    rule = PathSafetyRule(allowlist=["/home/user/", "/workspace/"])
+    result = rule.check(ToolCall(tool="read_file", args={"path": "/home/user/workspace/file.txt"}))
+    assert result.action == Action.ALLOW
