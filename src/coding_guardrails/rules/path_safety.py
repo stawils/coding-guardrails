@@ -103,7 +103,7 @@ class PathSafetyRule:
             if re.search(pattern, normalized_for_check):
                 return RuleResult.block(
                     tool,
-                    nudge=f"Path '{path}' contains a blocked traversal pattern.",
+                    nudge=f"Path blocked: '{path}' contains a traversal pattern.",
                     reason=f"path traversal: {path}",
                 )
 
@@ -113,7 +113,7 @@ class PathSafetyRule:
             if normalized.startswith(norm_prefix) or resolved.startswith(norm_prefix):
                 return RuleResult.block(
                     tool,
-                    nudge=f"Path '{path}' is outside the allowed workspace.",
+                    nudge=f"Path blocked: '{path}' is outside the allowed workspace.",
                     reason=f"blocked prefix: {path} matches {prefix}",
                 )
 
@@ -129,7 +129,7 @@ class PathSafetyRule:
             if not allowed:
                 return RuleResult.block(
                     tool,
-                    nudge=f"Path '{path}' is outside the allowed workspace.",
+                    nudge=f"Path blocked: '{path}' is outside the allowed workspace.",
                     reason=f"not in allowlist: {path}",
                 )
 

@@ -117,7 +117,7 @@ class NetworkRule:
                 if re.search(pattern, command) or re.search(pattern, decoded_command):
                     return RuleResult.block(
                         tool,
-                        nudge=f"Blocked: access to {label} is not allowed.",
+                        nudge=f"Network blocked: access to {label} is not allowed.",
                         reason=f"metadata endpoint: {label}",
                     )
 
@@ -126,7 +126,7 @@ class NetworkRule:
             if re.search(pattern, command) or re.search(pattern, decoded_command):
                 return RuleResult.block(
                     tool,
-                    nudge=f"Blocked: Python network call ({label}) is not allowed.",
+                    nudge=f"Network blocked: Python {label} is not allowed.",
                     reason=f"python network: {label}",
                 )
 
@@ -140,7 +140,7 @@ class NetworkRule:
                     if self._is_private_ip(ip):
                         return RuleResult.block(
                             tool,
-                            nudge=f"Blocked: request to private IP {ip} is not allowed.",
+                            nudge=f"Network blocked: request to private IP {ip} is not allowed.",
                             reason=f"private IP access: {ip}",
                         )
 

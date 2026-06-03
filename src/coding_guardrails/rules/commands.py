@@ -132,7 +132,7 @@ class CommandSafetyRule:
             if command.strip().startswith(blocked) or cleaned.strip().startswith(blocked):
                 return RuleResult.block(
                     tool,
-                    nudge=f"Command blocked for safety: '{blocked}...'",
+                    nudge=f"Command blocked: '{blocked}...' is destructive.",
                     reason=f"blocked command: {command[:100]}",
                 )
 
@@ -150,8 +150,8 @@ class CommandSafetyRule:
             if confirm_cmd.lower() in command.lower():
                 return RuleResult.nudge(
                     tool,
-                    message=f"WARNING: Potentially destructive command detected: '{confirm_cmd}'. "
-                    "Consider whether this is intended and add a confirmation step.",
+                    message=f"Advisory: Consider using caution with '{confirm_cmd}'. "
+                    "This command may cause data loss. Add a confirmation step before executing.",
                 )
 
         return None

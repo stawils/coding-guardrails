@@ -121,8 +121,8 @@ class SensitiveFileRule:
                 else:
                     return RuleResult.nudge(
                         call.tool,
-                        message=f"WARNING: Writing to {label}: '{path}'. "
-                        "Make sure this doesn't expose secrets.",
+                        message=f"Advisory: Writing to {label} may expose secrets. "
+                        "Consider using a copy instead of modifying the original.",
                     )
 
         # Check nested patterns (paths like subdir/.git/config)
@@ -137,8 +137,8 @@ class SensitiveFileRule:
                 else:
                     return RuleResult.nudge(
                         call.tool,
-                        message=f"WARNING: Writing to {label}: '{path}'. "
-                        "Make sure this doesn't expose secrets.",
+                        message=f"Advisory: Writing to {label} may expose secrets. "
+                        "Consider using a copy instead of modifying the original.",
                     )
 
         return RuleResult.allow(call.tool)

@@ -72,14 +72,12 @@ class PrerequisiteRule:
             if self._violation_count >= self.max_violations:
                 return RuleResult.block(
                     call.tool,
-                    nudge=f"You must read {path} before editing it. "
-                    f"Read the file first.",
+                    nudge=f"Edit blocked: read {path} first before editing.",
                     reason=f"edit without read: {path}",
                 )
             return RuleResult.nudge(
                 call.tool,
-                message=f"Consider reading {path} before editing. "
-                f"Read the file first.",
+                message=f"Advisory: Read {path} before editing to avoid errors.",
             )
 
         # No prerequisite violated — reset counter
