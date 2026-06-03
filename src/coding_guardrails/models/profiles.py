@@ -143,6 +143,57 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
+    # ── Gemma 4 12B Unified (Dense, encoder-free multimodal, 48 layers) ──
+    # 11.95B params, 256K max context, hybrid sliding window (1024) + global attn.
+    # Encoder-free: projects image/audio directly into LLM embedding space.
+    # Very efficient KV cache due to sliding window layers.
+    # No MTP support yet (llama.cpp issue #22747 — Gemma4AssistantForCausalLM
+    # not convertible to GGUF yet). Use without --spec-type draft-mtp.
+    # Sampling: Google recommends temp=1.0, top_k=64, top_p=0.95 for Gemma 4.
+    #
+    # VRAM budgets on 24 GB GPU (1.5 GB CUDA overhead):
+    #   UD-Q4_K_XL (~6.7 GB): 15.8 GB KV headroom → 256K ctx fits easily
+    #   Q4_K_M    (~6.7 GB): same
+    #   UD-Q3_K_XL (~5.3 GB): 17.2 GB KV headroom → 256K ctx with max headroom
+    "gemma-4-12b-it-UD-Q4_K_XL": ModelProfile(
+        name="gemma-4-12b-it-UD-Q4_K_XL",
+        family="Gemma4",
+        quant="UD-Q4_K_XL",
+        file_size_gb=6.7,
+        vram_required_gb=8.2,
+        context_tokens=256000,
+        architecture="dense",
+        active_params_b=12.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
+    "gemma-4-12b-it-Q4_K_M": ModelProfile(
+        name="gemma-4-12b-it-Q4_K_M",
+        family="Gemma4",
+        quant="Q4_K_M",
+        file_size_gb=6.7,
+        vram_required_gb=8.2,
+        context_tokens=256000,
+        architecture="dense",
+        active_params_b=12.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
+    "gemma-4-12b-it-UD-Q3_K_XL": ModelProfile(
+        name="gemma-4-12b-it-UD-Q3_K_XL",
+        family="Gemma4",
+        quant="UD-Q3_K_XL",
+        file_size_gb=5.3,
+        vram_required_gb=6.8,
+        context_tokens=256000,
+        architecture="dense",
+        active_params_b=12.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
 }
 # fmt: on
 
