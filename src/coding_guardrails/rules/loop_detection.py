@@ -22,9 +22,26 @@ from dataclasses import dataclass, field
 from coding_guardrails.rules.base import Action, RuleResult, ToolCall
 
 
+# Tool name aliases — functional equivalents that should be grouped for loop detection.
+_TOOL_ALIASES: dict[str, str] = {
+    "shell": "bash",
+    "exec": "bash",
+    "run": "bash",
+    "command": "bash",
+    "sh": "bash",
+    "create": "write",
+}
+
+
+def _normalize_tool(name: str) -> str:
+    """Normalize tool name to canonical form."""
+    return _TOOL_ALIASES.get(name, name)
+
+
 def _call_fingerprint(call: ToolCall) -> str:
-    """Stable hash of tool name + args for duplicate detection."""
-    payload = json.dumps({"tool": call.tool, "args": call.args}, sort_keys=True)
+    """Stable hash of normalized tool name + args for duplicate detection."""
+    normalized_tool = _normalize_tool(call.tool)
+    payload = json.dumps({"tool": normalized_tool, "args": call.args}, sort_keys=True)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
@@ -96,7 +113,7 @@ class LoopDetectionRule:
         # ── Check 2: Stagnation (cycling same few tools, different args) ──
         # Look at what the history would be after this call is recorded.
         # We need the tool names in recent history + this call.
-        recent_tools = list(self._tool_history) + [call.tool]
+        recent_tools = list(self._tool_history) + [_normalize_tool(call.tool)]
         if len(recent_tools) >= self.stagnation_threshold:
             unique_tools = len(set(recent_tools))
             if unique_tools <= self.stagnation_unique_tools:
@@ -121,7 +138,7 @@ class LoopDetectionRule:
         """Record executed calls for loop tracking."""
         for call in calls:
             self._history.append(_call_fingerprint(call))
-            self._tool_history.append(call.tool)
+            self._tool_history.append(_normalize_tool(call.tool))
 
     def reset(self) -> None:
         """Clear loop detection history.
