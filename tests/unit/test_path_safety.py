@@ -136,3 +136,44 @@ def test_windows_path_allowed_in_allowed_workspace():
     rule = PathSafetyRule(allowlist=["/home/user/", "/workspace/"])
     result = rule.check(ToolCall(tool="read_file", args={"path": "/home/user/workspace/file.txt"}))
     assert result.action == Action.ALLOW
+
+
+class TestEdgeCases:
+    """Edge case tests for path safety rule."""
+
+    def test_empty_path(self):
+        """Empty string path should be ALLOWED."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": ""}))
+        assert result.action == Action.ALLOW
+
+    def test_none_path(self):
+        """Path key missing from args should be ALLOWED."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={}))
+        assert result.action == Action.ALLOW
+
+    def test_relative_path_safe(self):
+        """Relative paths without traversal should be ALLOWED."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": "src/main.py"}))
+        assert result.action == Action.ALLOW
+
+    def test_dot_slash_path(self):
+        """Dot-slash paths like './' are ALLOWED (not traversal)."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": "./README.md"}))
+        assert result.action == Action.ALLOW
+
+    def test_home_dir_allowed(self):
+        """Home directory paths are ALLOWED."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": "/home/user/project/file.py"}))
+        assert result.action == Action.ALLOW
+
+    def test_multiple_traversal(self):
+        """Multiple traversal attempts like '../../../etc/passwd' should be BLOCKED."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": "../../../etc/passwd"}))
+        assert result.action == Action.BLOCK
+        assert "traversal" in result.nudge.lower() or "blocked" in result.nudge.lower()
