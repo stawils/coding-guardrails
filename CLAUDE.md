@@ -97,18 +97,46 @@ Layer 1 captures thinking tokens from the model's response. On retry (failed val
 |---------|---------|------|
 | `llm-server` | `llama-server` with model | :8080 |
 | `guardrails` | `coding-guardrails serve` | :8081 |
+| `workspace` | Working directory for testing via pi | — |
 
 ```bash
-# Start proxy
+# Session 1: LLM backend (use LM Studio's llama-server — supports DeltaNet models)
+LLAMA=~/.cache/lm-studio/extensions/backends/llama.cpp-linux-x86_64-nvidia-cuda12-avx2-2.18.0/llama-server
+
+# Qwen3.5-9B (200K ctx, MTP)
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf \
+  -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto --spec-type draft-mtp -np 1 -v
+
+# Qwen3.6-27B UD-Q4_K_XL (32K ctx)
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q4_K_XL.gguf \
+  -c 32768 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -v
+
+# Qwen3.6-27B UD-Q3_K_XL (82K ctx, needs 24+ GB free VRAM)
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q3_K_XL.gguf \
+  -c 81920 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -v
+
+# Session 2: Guardrails proxy
 source .venv/bin/activate
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
-  --model Qwen3.6-27B-UD-Q4_K_XL \
+  --model <model-name> \
   --port 8081 -v
+
+# Session 3: Workspace (for pi or testing)
+tmux new-session -s workspace -c ~/AI/<project-dir>
 ```
 
-### Client Quirks
+### Notes
 
+- **Use LM Studio's llama-server** (`~/.cache/lm-studio/extensions/.../2.18.0/llama-server`), NOT `~/llama.cpp/llama-server`. The LM Studio build supports DeltaNet/SSM tensors (Qwen3.6); the local build does not.
+- `~/llama.cpp/llama-server` is older (build 8276) and fails on Qwen3.6-27B models (missing `ssm_conv1d` tensors).
+- Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - `recommended_sampling=False` — model not in Forge's registry
 
