@@ -169,3 +169,33 @@ class TestEdgeCases:
         assert r.file_op_count == 0
         assert r.command_count == 0
         assert r.read_count == 0
+
+
+class TestRecordEdgeCases:
+
+    def test_record_empty_list(self, rule):
+        """record([]) should not change any counters."""
+        rule.record([])
+        assert rule.file_op_count == 0
+        assert rule.command_count == 0
+
+    def test_record_before_check(self, rule):
+        """record() before check() should increment counters."""
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        rule.record([call])
+        assert rule.command_count == 1
+
+    def test_record_same_call_twice(self, rule):
+        """Recording same call twice should count twice."""
+        call = ToolCall(tool="edit", args={"path": "f.py"})
+        rule.record([call])
+        rule.record([call])
+        assert rule.file_op_count == 2
+
+    def test_record_interleaved_with_check(self, rule):
+        """Interleaved record() and check() should maintain correct counts."""
+        for i in range(5):
+            call = ToolCall(tool="bash", args={"command": f"echo {i}"})
+            rule.check(call)
+            rule.record([call])
+        assert rule.command_count == 5

@@ -176,3 +176,33 @@ class TestEdgeCases:
         call = ToolCall(tool="edit", args={"path": "/tmp/日本語/file.py"})
         result = rule.check(call)
         assert result.action in (Action.ALLOW, Action.NUDGE)
+
+
+class TestRecordEdgeCases:
+
+    def test_record_empty_list(self, rule):
+        """record([]) should not change state."""
+        rule.record([])
+        # Verify read paths still empty
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        result = rule.check(edit_call)
+        assert result.action in (Action.NUDGE, Action.BLOCK)
+
+    def test_record_before_check(self, rule):
+        """record() before check() should register the read."""
+        call = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.record([call])
+        # Now edit should be allowed (path was recorded)
+        edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
+        assert rule.check(edit_call).action == Action.ALLOW
+
+    def test_record_resets_violation_counter(self, rule):
+        """record() should reset the violation counter."""
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)  # violation 1
+        rule.check(edit)  # violation 2
+        read = ToolCall(tool="read", args={"path": "src/main.py"})
+        rule.record([read])  # should reset counter
+        edit2 = ToolCall(tool="edit", args={"path": "src/other.py"})
+        result = rule.check(edit2)
+        assert result.action == Action.NUDGE  # counter was reset, not blocked
