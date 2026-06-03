@@ -104,7 +104,7 @@ class CheckResult:
             parts.append(f"{len(self.nudges)} nudged")
         if self.allowed:
             parts.append(f"{len(self.allowed)} allowed")
-        return " · ".join(parts) if parts else "no calls"
+        return " | ".join(parts) if parts else "no calls"
 
 
 class Rule(Protocol):

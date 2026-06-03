@@ -280,10 +280,10 @@ class CodingGuardrails:
                 if annotated.action == Action.BLOCK:
                     result.blocked.append(annotated)
                     call_blocked = True
+                    reason = annotated.reason or "policy violation"
                     logger.info(
-                        "  %s · %s → BLOCK (%s)",
-                        _fmt_call(call), rule.name,
-                        annotated.reason or "policy violation",
+                        "BLOCK %s | %s - %s",
+                        _fmt_call(call), rule.name, reason,
                     )
                     if debug and annotated.nudge:
                         logger.debug("    nudge: %s", _short(annotated.nudge))
@@ -292,16 +292,15 @@ class CodingGuardrails:
                 elif annotated.action == Action.NUDGE:
                     call_nudges.append(annotated)
                     result.nudges.append(annotated)
+                    reason = annotated.reason or "advisory"
                     logger.info(
-                        "  %s · %s → NUDGE (%s)",
-                        _fmt_call(call), rule.name,
-                        annotated.reason or "advisory",
+                        "NUDGE %s | %s - %s",
+                        _fmt_call(call), rule.name, reason,
                     )
                     if debug and annotated.nudge:
                         logger.debug("    message: %s", _short(annotated.nudge))
 
-                elif debug:
-                    logger.debug("    %-18s · PASS", rule.name)
+            # Debug: single summary line per call
 
             if not call_blocked:
                 result.allowed.append(call)
@@ -310,12 +309,14 @@ class CodingGuardrails:
                         n.rule_name for n in call_nudges if n.rule_name
                     )
                     logger.debug(
-                        "  %s · allowed (nudged: %s)", call.tool, nudge_names,
+                        "  %s | allowed (nudged: %s)", call.tool, nudge_names,
                     )
                 else:
-                    logger.debug("  %s · allowed", call.tool)
+                    logger.debug("  %s | allowed", call.tool)
 
-        logger.info("  %s", result.summary())
+        # DEBUG: single summary line
+        if debug:
+            logger.debug("%s", result.summary())
         return result
 
     def record(self, calls: list[ToolCall]) -> None:

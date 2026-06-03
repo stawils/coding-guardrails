@@ -54,7 +54,7 @@ class SequenceRule:
                 return RuleResult.block(
                     call.tool,
                     nudge=self.nudge,
-                    reason=f"hard sequence: {call.tool} → test",
+                    reason=f"hard sequence: {call.tool} -> test",
                 )
 
             return RuleResult.allow(call.tool)

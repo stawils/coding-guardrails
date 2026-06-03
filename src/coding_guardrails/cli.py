@@ -152,7 +152,7 @@ async def _run_proxy(
         model_name=model,
     )
     await server.start()
-    click.echo(f"\n  ✅ Proxy ready at http://{host}:{port}")
+    click.echo(f"\n  Proxy ready at http://{host}:{port}")
     click.echo(f"  Point your agent at http://{host}:{port}/v1/chat/completions")
 
     # Block until interrupted
@@ -204,10 +204,10 @@ def probe(backend_url: str) -> None:
         except Exception:
             click.echo("  Context: (couldn't detect)")
 
-        click.echo("\n  ✅ Backend reachable")
+        click.echo("\n  Backend reachable")
 
     except Exception as exc:
-        click.echo(f"  ❌ Error: {exc}", err=True)
+        click.echo(f"  Error: {exc}", err=True)
         sys.exit(1)
 
 

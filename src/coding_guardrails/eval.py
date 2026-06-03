@@ -190,7 +190,7 @@ def eval_cmd(
         result = run_scenario(s, backend_url, timeout=timeout)
         results.append(result)
 
-        icon = "✅" if result.passed else "❌"
+        icon = "PASS" if result.passed else "FAIL"
         click.echo(f" {icon} {result.actual} ({result.duration_ms:.0f}ms)")
         if not result.passed and result.detail:
             click.echo(f"    {result.detail}")
@@ -213,5 +213,5 @@ def eval_cmd(
         click.echo(f"\nFailed:")
         for r in results:
             if not r.passed:
-                click.echo(f"  ❌ {r.name}: expected={r.expected} actual={r.actual}")
+                click.echo(f"  FAIL {r.name}: expected={r.expected} actual={r.actual}")
         raise SystemExit(1)

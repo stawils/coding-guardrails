@@ -41,11 +41,11 @@ logger = logging.getLogger("coding_guardrails.proxy")
 _BANNER_WIDTH = 60
 
 
-def _banner(label: str, char: str = "─") -> str:
+def _banner(label: str, char: str = "-") -> str:
     pad = _BANNER_WIDTH - len(label) - 4
     left = pad // 2
     right = pad - left
-    return f"{char * left} ▸ {label} ◂ {char * right}"
+    return f"{char * left} >> {label} << {char * right}"
 
 
 def _short(msg: str, width: int = 80) -> str:
@@ -251,21 +251,21 @@ async def handle_chat_completions(
 
     # No tools → plain chat completion, pass through
     if not tool_specs:
-        logger.info("💬 Plain text (no tools)")
+        logger.info("Plain text (no tools)")
         t0 = time.monotonic()
         api_format = getattr(client, "api_format", "ollama")
         api_messages = fold_and_serialize(messages, api_format)
         response = await client.send(api_messages, tools=None, sampling=sampling)
         elapsed = time.monotonic() - t0
         text = response.content if isinstance(response, TextResponse) else ""
-        logger.info("✅ Text response (%s, %d chars)", _fmt_elapsed(elapsed), len(text))
+        logger.info("Text response (%s, %d chars)", _fmt_elapsed(elapsed), len(text))
         if is_stream:
             return text_to_sse_events(text, model=model_name)
         return text_response_to_openai(text, model=model_name)
 
     # ── Layer 1: Forge (rescue, validate, retry) ──
-    logger.info(_banner("LAYER 1 · Forge"))
-    logger.info("🔧 %d tools, %d msgs", len(tool_names), len(messages))
+    logger.info(_banner("LAYER 1 - Forge"))
+    logger.info("Tools: %d, msgs: %d", len(tool_names), len(messages))
     t0 = time.monotonic()
 
     validator = ResponseValidator(
@@ -287,7 +287,7 @@ async def handle_chat_completions(
         )
     except ToolCallError as exc:
         raw = exc.raw_response or ""
-        logger.warning("❌ Layer 1 failed after %d retries (%s)", max_retries, _short(raw, 80))
+        logger.warning("Layer 1 failed after %d retries (%s)", max_retries, _short(raw, 80))
         if is_stream:
             return text_to_sse_events(raw, model=model_name)
         return text_response_to_openai(raw, model=model_name)
@@ -295,7 +295,7 @@ async def handle_chat_completions(
     elapsed_l1 = time.monotonic() - t0
 
     if result is None:
-        logger.info("⚠️  Model returned empty (attempts exhausted)")
+        logger.info("WARN: Model returned empty (attempts exhausted)")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
@@ -306,7 +306,7 @@ async def handle_chat_completions(
     # If the model returned text (not tool calls), pass it through to the agent.
     if isinstance(response, TextResponse):
         text = response.content
-        logger.info("📝 Model responded with text (%d chars, %s, %d attempt%s)",
+        logger.info("Model responded with text (%d chars, %s, %d attempt%s)",
                     len(text), _fmt_elapsed(elapsed_l1),
                     attempts, "s" if attempts != 1 else "")
         if is_stream:
@@ -325,24 +325,24 @@ async def handle_chat_completions(
         # don't have a respond tool. The model is saying "I'm done."
         msg = respond_calls[0].args.get("message", respond_calls[0].args.get("answer", ""))
         attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
-        logger.info("✅ Layer 1 done %s (%s, respond → text: %s)",
+        logger.info("L1 done %s (%s, respond -> text: %s)",
                     attempts_tag, _fmt_elapsed(elapsed_l1), _short(msg, 60))
         if is_stream:
             return text_to_sse_events(msg, model=model_name)
         return text_response_to_openai(msg, model=model_name)
 
     if not other_calls:
-        logger.info("⚠️  No actionable tool calls")
+        logger.info("WARN: No actionable tool calls")
         if is_stream:
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
 
     attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
-    logger.info("✅ Layer 1 done %s (%s, %d tool calls: %s)",
+    logger.info("L1 done %s (%s, %d tool calls: %s)",
                 attempts_tag, _fmt_elapsed(elapsed_l1), len(other_calls), _fmt_tools(other_calls))
 
     # ── Layer 2: Coding guardrails ──
-    logger.info(_banner("LAYER 2 · Guardrails"))
+    logger.info(_banner("LAYER 2 - Guardrails"))
     t1 = time.monotonic()
 
     # Feed conversation context to thoroughness rule
@@ -362,7 +362,7 @@ async def handle_chat_completions(
 
     # If any call was hard-blocked, return block responses
     if guardrail_result.has_blocks:
-        logger.info("⛔ BLOCKED (%s)", _fmt_elapsed(elapsed_l2))
+        logger.info("BLOCKED (%s)", _fmt_elapsed(elapsed_l2))
         block = guardrail_result.blocked[0]
         nudge_text = block.nudge or "Action blocked by guardrails."
 
@@ -378,7 +378,7 @@ async def handle_chat_completions(
         return text_response_to_openai(nudge_text, model=model_name)
 
     # All clear
-    logger.info("✅ PASSED (%s)", _fmt_elapsed(elapsed_l2))
+    logger.info("PASSED (%s)", _fmt_elapsed(elapsed_l2))
 
     if is_stream:
         return tool_calls_to_sse_events(other_calls, model=model_name)

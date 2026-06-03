@@ -222,7 +222,7 @@ class GuardrailProxyServer:
         msg_count = len(body.get("messages", []))
         tool_count = len(body.get("tools", []))
         logger.info("")
-        logger.info("━" * 60)
+        logger.info("-" * 60)
         logger.info(">> POST /v1/chat/completions")
         logger.info("   msgs=%d tools=%d stream=%s model=%s",
                     msg_count, tool_count, is_stream, body.get("model", "?"))

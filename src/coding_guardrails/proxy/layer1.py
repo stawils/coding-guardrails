@@ -159,13 +159,13 @@ async def run_inference_instrumented(
             messages.clear()
             messages.extend(compacted)
             logger.info(
-                "  📦 Compacted %d → %d messages", before_count, len(messages),
+                "  Compacted %d -> %d messages", before_count, len(messages),
             )
 
         # ── Context thresholds ──
         context_warning = context_manager.check_thresholds(messages)
         if context_warning:
-            logger.info("  ⚠️  Context threshold warning: %s", _short(context_warning, 60))
+            logger.info("  WARN: Context threshold: %s", _short(context_warning, 60))
 
         # ── Fold and serialize ──
         api_messages = fold_and_serialize(messages, api_format)
@@ -201,7 +201,7 @@ async def run_inference_instrumented(
         thinking = getattr(client, "last_thinking", "")
 
         logger.info(
-            "  📤 LLM response (%s%s): %s",
+            "  LLM response (%s%s): %s",
             _fmt_elapsed(send_elapsed), tok_info,
             _short(
                 response.content if isinstance(response, TextResponse)
@@ -212,7 +212,7 @@ async def run_inference_instrumented(
 
         if thinking:
             logger.info(
-                "  🧠 Thinking (%d chars): %s",
+                "  Thinking (%d chars): %s",
                 len(thinking), _short(thinking, 120),
             )
 
@@ -224,7 +224,7 @@ async def run_inference_instrumented(
             error_tracker.reset_retries()
             validated = validation.tool_calls
             logger.info(
-                "  ✅ Validated (%s) — %s",
+                "  Validated (%s) -- %s",
                 _fmt_elapsed(t_validate),
                 _fmt_tools(validated) if validated else "text response",
             )
@@ -259,7 +259,7 @@ async def run_inference_instrumented(
 
             if content and len(content) > 30 and (len(content) > 100 or thinking) and (first_attempt_text_ok or retry_text_ok):
                 logger.info(
-                    "  📝 Passing through text response (%d chars)",
+                    "  Passing through text (%d chars)",
                     len(content),
                 )
                 full_content = content
@@ -275,7 +275,7 @@ async def run_inference_instrumented(
         # ── Retry path ──
         nudge = validation.nudge
         logger.info(
-            "  ⚠️  Validation failed [%s]: %s",
+            "  WARN: Validation failed [%s]: %s",
             nudge.kind,
             _short(nudge.content, 80),
         )
@@ -285,11 +285,11 @@ async def run_inference_instrumented(
             rescued = rescue_tool_call(response.content, tool_names)
             if rescued:
                 logger.info(
-                    "  🔧 Rescue parsing found %d tool call(s): %s",
+                    "  Rescue: found %d tool call(s): %s",
                     len(rescued), _fmt_tools(rescued),
                 )
             else:
-                logger.debug("  🔧 Rescue parsing: no tool calls found in text")
+                logger.debug("  Rescue: no tool calls found in text")
 
         error_tracker.record_retry()
         if error_tracker.retries_exhausted:
@@ -297,7 +297,7 @@ async def run_inference_instrumented(
                 [(tc.tool, tc.args) for tc in response]
             )
             logger.warning(
-                "  ❌ Retries exhausted after %d consecutive failures", max_retries,
+                "  FAIL: Retries exhausted after %d consecutive failures", max_retries,
             )
             raise ToolCallError(
                 f"Retries exhausted after {max_retries} consecutive failed attempts",
@@ -319,7 +319,7 @@ async def run_inference_instrumented(
                 f"Based on this thinking, {nudge.content}"
             )
             logger.info(
-                "  🧠 Fed %d chars of thinking into retry nudge",
+                "  Fed %d chars of thinking into retry nudge",
                 len(thinking),
             )
 
@@ -332,7 +332,7 @@ async def run_inference_instrumented(
             messages.append(msg)
             new_messages.append(msg)
             logger.info(
-                "  💬 Emitted assistant text (%d chars)", len(response.content),
+                "  Emitted assistant text (%d chars)", len(response.content),
             )
 
             nudge_msg = Message(
@@ -342,7 +342,7 @@ async def run_inference_instrumented(
             )
             messages.append(nudge_msg)
             new_messages.append(nudge_msg)
-            logger.info("  📢 Injected %s nudge", nudge.kind)
+            logger.info("  Injected %s nudge", nudge.kind)
         else:
             tool_calls = response
             if tool_calls[0].reasoning:
@@ -375,11 +375,11 @@ async def run_inference_instrumented(
                 messages.append(err_msg)
                 new_messages.append(err_msg)
                 logger.info(
-                    "  🔧 Emitted tool-error for unknown tool '%s'", tc_info.name,
+                    "  Emitted tool-error for unknown tool '%s'", tc_info.name,
                 )
 
     # max_attempts exhausted without valid response
-    logger.warning("  ❌ Max attempts (%d) exhausted without valid response", attempt_limit)
+    logger.warning("  FAIL: Max attempts (%d) exhausted without valid response", attempt_limit)
     return None
 
 

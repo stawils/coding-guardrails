@@ -121,7 +121,7 @@ class SensitiveFileRule:
                 else:
                     return RuleResult.nudge(
                         call.tool,
-                        message=f"⚠️ Writing to {label}: '{path}'. "
+                        message=f"WARNING: Writing to {label}: '{path}'. "
                         "Make sure this doesn't expose secrets.",
                     )
 
@@ -137,7 +137,7 @@ class SensitiveFileRule:
                 else:
                     return RuleResult.nudge(
                         call.tool,
-                        message=f"⚠️ Writing to {label}: '{path}'. "
+                        message=f"WARNING: Writing to {label}: '{path}'. "
                         "Make sure this doesn't expose secrets.",
                     )
 
