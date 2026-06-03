@@ -121,6 +121,12 @@ $LLAMA \
   -c 81920 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -v
 
+# Gemma 4 12B Unified UD-Q4_K_XL (256K ctx, ~8 GB VRAM)
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-UD-Q4_K_XL.gguf \
+  -c 256000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -np 1 -v
+
 # Session 2: Guardrails proxy
 source .venv/bin/activate
 coding-guardrails serve \
@@ -137,6 +143,7 @@ tmux new-session -s workspace -c ~/AI/<project-dir>
 - **Use LM Studio's llama-server** (`~/.cache/lm-studio/extensions/.../2.18.0/llama-server`), NOT `~/llama.cpp/llama-server`. The LM Studio build supports DeltaNet/SSM tensors (Qwen3.6); the local build does not.
 - `~/llama.cpp/llama-server` is older (build 8276) and fails on Qwen3.6-27B models (missing `ssm_conv1d` tensors).
 - Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
+- **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - `recommended_sampling=False` — model not in Forge's registry
 
