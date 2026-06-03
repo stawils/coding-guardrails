@@ -40,6 +40,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "pytest-asyncio",
+    "pytest-hypothesis",
+    "hypothesis",
     "ruff",
     "mypy",
 ]
