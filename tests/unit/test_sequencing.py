@@ -86,3 +86,40 @@ class TestHardMode:
         bash = ToolCall(tool="bash", args={"command": "pytest"})
         rule.record([bash])
         assert rule._pending is False
+
+
+# ── Edge cases ──────────────────────────────────────────────────────────────
+
+class TestEdgeCases:
+    """Edge case tests for the sequencing rule."""
+
+    def test_empty_args(self, rule):
+        """Tool call with empty args should be ALLOWED."""
+        call = ToolCall(tool="bash", args={})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+
+    def test_non_trigger_tool(self, rule):
+        """Non-bash tool call after cooldown fires should be ALLOWED (cooldown prevents continuous nudging)."""
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        # Exhaust cooldown period (cooldown=3, so need 3 reads to trigger nudge)
+        for i in range(rule.cooldown):
+            read = ToolCall(tool="read", args={"path": f"file{i}.py"})
+            rule.check(read)
+        # After the last read in the loop, cooldown fired and reset counter to 0
+        # The next non-bash tool call is in the cooldown period but counter is at 1, so ALLOW
+        result = rule.check(read)  # 4th call in cooldown period
+        assert result.action == Action.ALLOW
+
+    def test_non_matching_tool(self, rule):
+        """Tool call for unknown_tool should be ALLOWED."""
+        call = ToolCall(tool="unknown_tool", args={"some": "arg"})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+
+    def test_empty_string_command(self, rule):
+        """Tool call with empty string command should be ALLOWED."""
+        call = ToolCall(tool="bash", args={"command": ""})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
