@@ -43,12 +43,14 @@ class RuleResult:
         tool: The tool name that was checked.
         nudge: Corrective message (set when action is block or nudge).
         reason: Human-readable explanation for logging.
+        rule_name: Name of the rule that produced this result.
     """
 
     action: Action
     tool: str
     nudge: str | None = None
     reason: str | None = None
+    rule_name: str = ""
 
     @staticmethod
     def allow(tool: str) -> RuleResult:
@@ -92,6 +94,17 @@ class CheckResult:
     def block_messages(self) -> list[str]:
         """Return all block messages as strings."""
         return [r.nudge for r in self.blocked if r.nudge]
+
+    def summary(self) -> str:
+        """One-line summary of the check result."""
+        parts = []
+        if self.blocked:
+            parts.append(f"{len(self.blocked)} blocked")
+        if self.nudges:
+            parts.append(f"{len(self.nudges)} nudged")
+        if self.allowed:
+            parts.append(f"{len(self.allowed)} allowed")
+        return " · ".join(parts) if parts else "no calls"
 
 
 class Rule(Protocol):

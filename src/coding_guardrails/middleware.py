@@ -8,7 +8,8 @@ The middleware holds all configured rules and provides:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass, field, replace
 
 from coding_guardrails.rules.base import (
     Action,
@@ -28,6 +29,28 @@ from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
 from coding_guardrails.rules.thoroughness import ThoroughnessRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
+
+logger = logging.getLogger("coding_guardrails.layer2")
+
+
+def _short(text: str, width: int = 60) -> str:
+    if len(text) <= width:
+        return text
+    return text[:width - 3] + "..."
+
+
+def _fmt_call(call: ToolCall, width: int = 60) -> str:
+    """Format a tool call preview: tool(arg1=val1, arg2=val2)."""
+    parts = []
+    for k, v in list(call.args.items())[:3]:
+        s = str(v)
+        if len(s) > 20:
+            s = s[:17] + "..."
+        parts.append(f"{k}={s}")
+    result = f"{call.tool}({', '.join(parts)})"
+    if len(result) > width:
+        return result[:width - 3] + "..."
+    return result
 
 
 @dataclass
@@ -241,25 +264,58 @@ class CodingGuardrails:
         """
         result = CheckResult()
         rules = self._active_rules()
+        debug = logger.isEnabledFor(logging.DEBUG)
 
         for call in calls:
             call_blocked = False
-            call_nudges: list[str] = []
+            call_nudges: list[RuleResult] = []
+
+            if debug:
+                logger.debug("  CALL %s", _fmt_call(call))
 
             for rule in rules:
                 rule_result = rule.check(call)
+                annotated = replace(rule_result, rule_name=rule.name)
 
-                if rule_result.action == Action.BLOCK:
-                    result.blocked.append(rule_result)
+                if annotated.action == Action.BLOCK:
+                    result.blocked.append(annotated)
                     call_blocked = True
+                    logger.info(
+                        "  %s · %s → BLOCK (%s)",
+                        _fmt_call(call), rule.name,
+                        annotated.reason or "policy violation",
+                    )
+                    if debug and annotated.nudge:
+                        logger.debug("    nudge: %s", _short(annotated.nudge))
                     break  # No point checking further rules
 
-                elif rule_result.action == Action.NUDGE:
-                    result.nudges.append(rule_result)
+                elif annotated.action == Action.NUDGE:
+                    call_nudges.append(annotated)
+                    result.nudges.append(annotated)
+                    logger.info(
+                        "  %s · %s → NUDGE (%s)",
+                        _fmt_call(call), rule.name,
+                        annotated.reason or "advisory",
+                    )
+                    if debug and annotated.nudge:
+                        logger.debug("    message: %s", _short(annotated.nudge))
+
+                elif debug:
+                    logger.debug("    %-18s · PASS", rule.name)
 
             if not call_blocked:
                 result.allowed.append(call)
+                if call_nudges:
+                    nudge_names = ", ".join(
+                        n.rule_name for n in call_nudges if n.rule_name
+                    )
+                    logger.debug(
+                        "  %s · allowed (nudged: %s)", call.tool, nudge_names,
+                    )
+                else:
+                    logger.debug("  %s · allowed", call.tool)
 
+        logger.info("  %s", result.summary())
         return result
 
     def record(self, calls: list[ToolCall]) -> None:

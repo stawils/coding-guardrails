@@ -350,26 +350,12 @@ async def handle_chat_completions(
     # Record executed calls (for stateful rules like prerequisites)
     if guardrail_result.allowed:
         guardrails.record(guardrail_result.allowed)
-        for call in guardrail_result.allowed:
-            logger.info("  ✅ %s — allowed", call.tool)
-
-    # Log blocks
-    if guardrail_result.has_blocks:
-        for block in guardrail_result.blocked:
-            logger.info("  🚫 %s — BLOCKED [%s]", block.tool, block.reason or "policy violation")
-            logger.info("     ↳ %s", _short(block.nudge or "", 60))
-
-    # Log nudges
-    if guardrail_result.has_nudges:
-        for nudge in guardrail_result.nudges:
-            logger.info("  ⚠️  %s — nudged [%s]", nudge.tool, nudge.reason or "advisory")
-            logger.info("     ↳ %s", _short(nudge.nudge or "", 60))
 
     elapsed_l2 = time.monotonic() - t1
 
     # If any call was hard-blocked, return block responses
     if guardrail_result.has_blocks:
-        logger.info("⛔ Request BLOCKED by Layer 2 (%s)", _fmt_elapsed(elapsed_l2))
+        logger.info("⛔ BLOCKED (%s)", _fmt_elapsed(elapsed_l2))
         block = guardrail_result.blocked[0]
         nudge_text = block.nudge or "Action blocked by guardrails."
 
@@ -385,7 +371,7 @@ async def handle_chat_completions(
         return text_response_to_openai(nudge_text, model=model_name)
 
     # All clear
-    logger.info("✅ Request PASSED (%s)", _fmt_elapsed(elapsed_l2))
+    logger.info("✅ PASSED (%s)", _fmt_elapsed(elapsed_l2))
 
     if is_stream:
         return tool_calls_to_sse_events(other_calls, model=model_name)
