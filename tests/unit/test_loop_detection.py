@@ -196,3 +196,41 @@ class TestRecordEdgeCases:
         rule.check(call2)
         rule.record([call2])
         # Should be tracking both different calls, no loop
+
+    def test_tool_aliasing_detected(self, rule):
+        """bash and shell with same args should be treated as duplicates."""
+        call1 = ToolCall(tool="bash", args={"command": "echo hi"})
+        call2 = ToolCall(tool="shell", args={"command": "echo hi"})
+        call3 = ToolCall(tool="exec", args={"command": "echo hi"})
+        # Record 2 prior identical calls via aliases
+        rule.check(call1)
+        rule.record([call1])
+        rule.check(call2)
+        rule.record([call2])
+        # Third alias should trigger nudge (nudge_threshold=3)
+        result = rule.check(call3)
+        assert result.action == Action.NUDGE
+
+    def test_tool_aliasing_blocks(self, rule):
+        """Repeated calls via different tool aliases should escalate to block."""
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        aliases = ["bash", "shell", "exec", "run", "command"]
+        for alias in aliases:
+            c = ToolCall(tool=alias, args={"command": "echo hi"})
+            rule.check(c)
+            rule.record([c])
+        # 6th call (any alias) should block (block_threshold=5)
+        result = rule.check(ToolCall(tool="sh", args={"command": "echo hi"}))
+        assert result.action == Action.BLOCK
+
+    def test_write_create_aliasing(self, rule):
+        """write and create with same args should be detected as duplicates."""
+        call1 = ToolCall(tool="write", args={"path": "f.py", "content": "x"})
+        call2 = ToolCall(tool="create", args={"path": "f.py", "content": "x"})
+        call3 = ToolCall(tool="write", args={"path": "f.py", "content": "x"})
+        rule.check(call1)
+        rule.record([call1])
+        rule.check(call2)
+        rule.record([call2])
+        result = rule.check(call3)
+        assert result.action == Action.NUDGE
