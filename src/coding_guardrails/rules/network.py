@@ -41,6 +41,16 @@ _METADATA_PATTERNS: list[tuple[str, str]] = [
     (r"instance-data\.ec2\.", "EC2 instance metadata"),
 ]
 
+# Python network patterns.
+_PYTHON_NETWORK_PATTERNS: list[tuple[str, str]] = [
+    (r"subprocess\.(run|call|Popen|check_output|check_call)\s*\(", "subprocess network call"),
+    (r"os\.system\s*\(", "os.system call"),
+    (r"requests\.(get|post|put|delete|patch|head)\s*\(", "requests library call"),
+    (r"httpx\.(get|post|put|delete|patch|head)\s*\(", "httpx library call"),
+    (r"urllib\.request\.urlopen\s*\(", "urllib request"),
+    (r"socket\.socket\s*\(", "raw socket creation"),
+]
+
 
 @dataclass
 class NetworkRule:
@@ -110,6 +120,15 @@ class NetworkRule:
                         nudge=f"Blocked: access to {label} is not allowed.",
                         reason=f"metadata endpoint: {label}",
                     )
+
+        # Python network patterns
+        for pattern, label in _PYTHON_NETWORK_PATTERNS:
+            if re.search(pattern, command) or re.search(pattern, decoded_command):
+                return RuleResult.block(
+                    tool,
+                    nudge=f"Blocked: Python network call ({label}) is not allowed.",
+                    reason=f"python network: {label}",
+                )
 
         if self.block_private_ips:
             # Match IPs in URLs or direct in both original and decoded

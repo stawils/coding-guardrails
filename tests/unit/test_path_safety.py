@@ -177,3 +177,21 @@ class TestEdgeCases:
         result = rule.check(ToolCall(tool="read_file", args={"path": "../../../etc/passwd"}))
         assert result.action == Action.BLOCK
         assert "traversal" in result.nudge.lower() or "blocked" in result.nudge.lower()
+
+    def test_relative_windows_drive_path_blocked(self):
+        """Windows relative drive path (C:file) must be blocked."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": "C:Windows/System32/config/sam"}))
+        assert result.action == Action.BLOCK
+
+    def test_extended_length_windows_path_blocked(self):
+        """Extended-length Windows path (\\?\C:\...) must be blocked."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": r"\\?\C:\Windows\System32"}))
+        assert result.action == Action.BLOCK
+
+    def test_windows_device_path_blocked(self):
+        """Windows device path (\\.\pipe\...) must be blocked as UNC."""
+        rule = PathSafetyRule()
+        result = rule.check(ToolCall(tool="read_file", args={"path": r"\\.\pipe\eventlog"}))
+        assert result.action == Action.BLOCK
