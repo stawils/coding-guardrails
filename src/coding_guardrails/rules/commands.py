@@ -150,7 +150,7 @@ class CommandSafetyRule:
             if confirm_cmd.lower() in command.lower():
                 return RuleResult.nudge(
                     tool,
-                    message=f"⚠️ Potentially destructive command detected: '{confirm_cmd}'. "
+                    message=f"WARNING: Potentially destructive command detected: '{confirm_cmd}'. "
                     "Consider whether this is intended and add a confirmation step.",
                 )
 
