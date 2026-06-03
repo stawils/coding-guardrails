@@ -114,3 +114,8 @@ class PrerequisiteRule:
 
         # Reset violation counter on successful execution
         self._violation_count = 0
+
+    def mark_directory_read(self, path: str) -> None:
+        """Mark a directory as having been read (for testing)."""
+        normalized = os.path.normpath(os.path.expanduser(path))
+        self._read_dirs.add(normalized.rstrip("/"))

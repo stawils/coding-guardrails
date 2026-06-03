@@ -40,6 +40,21 @@ class SessionBudgetRule:
     _warned_reads: bool = field(default=False, repr=False)
 
     @property
+    def file_op_count(self) -> int:
+        """Number of file operations recorded."""
+        return self._file_ops
+
+    @property
+    def command_count(self) -> int:
+        """Number of commands recorded."""
+        return self._commands
+
+    @property
+    def read_count(self) -> int:
+        """Number of reads recorded."""
+        return self._reads
+
+    @property
     def name(self) -> str:
         return "session_budget"
 
