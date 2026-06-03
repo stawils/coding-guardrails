@@ -169,22 +169,17 @@ async def handle_chat_completions(
     model_name = body.get("model", "coding-guardrails")
     sampling = _extract_sampling(body)
 
-    # Reset loop detection on new conversations.
-    # A new conversation has very few messages (system + user = 2).
-    # This prevents cross-contamination between independent requests
-    # (e.g., Forge eval runs, agent task switches).
-    if (
-        guardrails.loop_detection
-        and len(openai_messages) <= 3
-        and not any(m.get("role") == "tool" for m in openai_messages)
-    ):
-        guardrails.loop_detection.reset()
-    if (
-        guardrails.thoroughness
-        and len(openai_messages) <= 3
-        and not any(m.get("role") == "tool" for m in openai_messages)
-    ):
-        guardrails.thoroughness.reset()
+    # Reset stateful rules on new conversations.
+    # Detect new conversation: no assistant messages in history (no prior
+    # tool calls or text responses). This handles /new, /resume to fresh
+    # sessions, and first requests from eval runners. More robust than
+    # checking message count, which varies with system prompt length.
+    has_assistant = any(m.get("role") == "assistant" for m in openai_messages)
+    if not has_assistant:
+        if guardrails.loop_detection:
+            guardrails.loop_detection.reset()
+        if guardrails.thoroughness:
+            guardrails.thoroughness.reset()
 
     # Preprocess messages to fix patterns that confuse local models.
     # Pi sends empty user messages ("\n") as "continue" signals and includes
