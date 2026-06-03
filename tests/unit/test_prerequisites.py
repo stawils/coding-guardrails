@@ -114,13 +114,13 @@ class TestSmartPathMatching:
         rule.check(read_call)
         rule.record([read_call])
         # Manually add as directory (os.path.isdir won't work for non-existent paths)
-        rule._read_dirs.add("src")
+        rule.mark_directory_read("src")
         edit_call = ToolCall(tool="edit", args={"path": "src/main.py"})
         assert rule.check(edit_call).action == Action.ALLOW
 
     def test_parent_read_satisfies_nested_file(self, rule):
         """Reading the root should satisfy any child edit."""
-        rule._read_dirs.add(".")
+        rule.mark_directory_read(".")
         edit_call = ToolCall(tool="edit", args={"path": "src/deep/nested/file.py"})
         assert rule.check(edit_call).action == Action.ALLOW
 

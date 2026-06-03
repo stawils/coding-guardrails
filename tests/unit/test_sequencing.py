@@ -37,7 +37,7 @@ class TestToolMatching:
         bash = ToolCall(tool=tool_name, args={"command": "pytest"})
         result = rule.check(bash)
         assert result.action == Action.ALLOW
-        assert rule._pending is False  # suggestion cleared
+        assert rule.has_pending is False  # suggestion cleared
 
 
 class TestSoftNudge:
@@ -85,7 +85,7 @@ class TestHardMode:
         rule.check(edit)
         bash = ToolCall(tool="bash", args={"command": "pytest"})
         rule.record([bash])
-        assert rule._pending is False
+        assert rule.has_pending is False
 
 
 # ── Edge cases ──────────────────────────────────────────────────────────────

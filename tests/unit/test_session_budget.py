@@ -55,7 +55,7 @@ class TestFileOps:
             call = ToolCall(tool=tool, args={"path": "f.py"})
             rule.check(call)
             rule.record([call])
-        assert rule._file_ops == 5
+        assert rule.file_op_count == 5
 
 
 class TestCommands:
@@ -162,10 +162,10 @@ class TestEdgeCases:
             call = ToolCall(tool="edit", args={"path": "f.py"})
             r.check(call)
             r.record([call])
-        assert r._file_ops == 5
+        assert r.file_op_count == 5
         # Reset counters
         r.reset()
         # Verify all counters are cleared
-        assert r._file_ops == 0
-        assert r._commands == 0
-        assert r._reads == 0
+        assert r.file_op_count == 0
+        assert r.command_count == 0
+        assert r.read_count == 0

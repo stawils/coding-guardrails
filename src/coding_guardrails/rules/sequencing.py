@@ -41,6 +41,11 @@ class SequenceRule:
     _pending: bool = field(default=False, repr=False)
 
     @property
+    def has_pending(self) -> bool:
+        """Whether a pending test nudge is active."""
+        return self._pending
+
+    @property
     def name(self) -> str:
         return "sequencing"
 
