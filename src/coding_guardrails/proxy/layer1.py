@@ -240,9 +240,9 @@ async def run_inference_instrumented(
         # thinking), return it as-is instead of retrying. The agent can
         # handle text responses — retrying wastes tokens and time.
         #
-        # On attempt 1: only passthrough for early turns (no tool results
-        # in history). If tool results exist, the model is mid-workflow
-        # and should keep calling tools. Passthrough here aborts the task.
+        # On attempt 1: passthrough for substantive text regardless of
+        # tool history. This prevents the infinite loop where model
+        # finishes a task, gets blocked, and retries with useless commands.
         # On attempt > 1: the model was nudged and still chose text —
         # accept it, retrying further is unlikely to help.
         if isinstance(response, TextResponse):
@@ -254,7 +254,7 @@ async def run_inference_instrumented(
                 )
                 for m in messages
             )
-            first_attempt_text_ok = attempts == 1 and not has_tool_history
+            first_attempt_text_ok = attempts == 1
             retry_text_ok = attempts > 1
 
             if content and len(content) > 30 and (len(content) > 100 or thinking) and (first_attempt_text_ok or retry_text_ok):

@@ -149,6 +149,15 @@ def _make_block_response(
     }
 
 
+def _text_retry_nudge(raw_response: str) -> str:
+    """Softer retry nudge that acknowledges the task might be done."""
+    return (
+        "Your previous response was text instead of a tool call. "
+        "If the task is complete, respond with a plain text summary. "
+        "Otherwise, make a tool call to continue working."
+    )
+
+
 async def handle_chat_completions(
     body: dict[str, Any],
     client: LLMClient,
@@ -216,10 +225,9 @@ async def handle_chat_completions(
 
     if _REAL_AGENT_TOOLS & tool_names_lower:
         enforcement = (
-            "IMPORTANT: Respond by calling tools (bash, read, edit, write). "
-            "If the task is complete and you have nothing left to do, "
-            "respond with a short plain text summary of what was done. "
-            "If unsure what to do, call bash with 'echo ready'."
+            "When working on a task, respond by calling tools (bash, read, edit, write). "
+            "When the task is COMPLETE and you have nothing left to do, respond with plain text summarizing what was done. "
+            "Do NOT call unnecessary tools just to have a tool call. If unsure, call bash with 'echo ready'."
         )
         if openai_messages:
             first = openai_messages[0]
@@ -260,7 +268,11 @@ async def handle_chat_completions(
     logger.info("🔧 %d tools, %d msgs", len(tool_names), len(messages))
     t0 = time.monotonic()
 
-    validator = ResponseValidator(tool_names, rescue_enabled=rescue_enabled)
+    validator = ResponseValidator(
+        tool_names,
+        rescue_enabled=rescue_enabled,
+        retry_nudge_fn=_text_retry_nudge,
+    )
     error_tracker = ErrorTracker(max_retries=max_retries)
 
     try:
