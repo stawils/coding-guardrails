@@ -37,6 +37,7 @@ class SessionBudgetRule:
     _reads: int = field(default=0, repr=False)
     _warned_files: bool = field(default=False, repr=False)
     _warned_commands: bool = field(default=False, repr=False)
+    _warned_reads: bool = field(default=False, repr=False)
 
     @property
     def name(self) -> str:
@@ -111,6 +112,13 @@ class SessionBudgetRule:
             elif _tool_matches(call.tool, _READ_TOOLS):
                 self._reads += 1
 
-    @property
-    def _warned_reads(self) -> bool:
-        return self.max_reads > 0 and self._reads >= int(self.max_reads * self.warn_at)
+
+
+    def reset(self) -> None:
+        """Reset all counters to zero."""
+        self._file_ops = 0
+        self._commands = 0
+        self._reads = 0
+        self._warned_files = False
+        self._warned_commands = False
+        self._warned_reads = False

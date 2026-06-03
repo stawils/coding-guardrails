@@ -41,6 +41,27 @@ _DEFAULT_PROTECTED: list[tuple[str, str, str]] = [
     (r"^(\./)?\.env\.", "Environment secrets file", "nudge"),
 ]
 
+# Additional nested path patterns that must be blocked (e.g., subdir/.git/config)
+# These are checked separately after stripping ./ prefix
+_NESTED_PROTECTED_PATTERNS: list[tuple[str, str, str]] = [
+    # Match .git/ anywhere in the path (nested directories)
+    (r"/\.git/", "Git internal files", "block"),
+    # Match .ssh/ anywhere in the path
+    (r"/\.ssh/", "SSH directory", "block"),
+    (r"/\.gnupg/", "GPG directory", "block"),
+    # Match .github/workflows/ anywhere
+    (r"/\.github/workflows/", "GitHub Actions workflow", "block"),
+    (r"/\.gitlab-ci\.yml$", "GitLab CI config", "block"),
+    (r"/(Jenkinsfile|jenkinsfile)$", "Jenkins pipeline", "block"),
+    (r"/\.circleci/", "CircleCI config", "block"),
+    # Match .pre-commit-config.yaml file anywhere
+    (r"/\.pre-commit-config\.ya?ml$", "Pre-commit config", "block"),
+    (r"/\.husky/", "Husky git hooks", "block"),
+    # Match .env file anywhere (nudge, not block)
+    (r"/\.env$", "Environment secrets file", "nudge"),
+    (r"/\.env\.", "Environment secrets file", "nudge"),
+]
+
 
 @dataclass
 class SensitiveFileRule:
@@ -49,9 +70,10 @@ class SensitiveFileRule:
     Attributes:
         write_tools: Tool name prefixes that write files.
         path_arg: Argument name containing the file path.
-        protected: List of (regex_pattern, label, action) tuples.
+        protected: List of (regex_pattern, label, action) tuples for root-level paths.
             action is "block" or "nudge".
         extra_protected: Additional protected paths to add.
+        nested_protected: List of (regex_pattern, label, action) tuples for nested paths.
     """
 
     write_tools: tuple[str, ...] = _WRITE_TOOLS
@@ -60,6 +82,9 @@ class SensitiveFileRule:
         default_factory=lambda: list(_DEFAULT_PROTECTED)
     )
     extra_protected: list[tuple[str, str, str]] = field(default_factory=list)
+    nested_protected: list[tuple[str, str, str]] = field(
+        default_factory=lambda: list(_NESTED_PROTECTED_PATTERNS)
+    )
 
     @property
     def name(self) -> str:
@@ -81,11 +106,28 @@ class SensitiveFileRule:
         rel_lower = rel.lower()
         normalized_lower = normalized.lower()
 
-        all_protected = list(self.protected) + list(self.extra_protected)
-        for pattern, label, action in all_protected:
+        # Check root-level patterns first (paths starting with .)
+        all_root_protected = list(self.protected) + list(self.extra_protected)
+        for pattern, label, action in all_root_protected:
             if (re.search(pattern, rel_lower) or re.search(pattern, normalized_lower)) or (
                 re.search(pattern, rel) or re.search(pattern, normalized)
             ):
+                if action == "block":
+                    return RuleResult.block(
+                        call.tool,
+                        nudge=f"Write to {label} blocked: '{path}' is a protected path.",
+                        reason=f"sensitive file: {path} ({label})",
+                    )
+                else:
+                    return RuleResult.nudge(
+                        call.tool,
+                        message=f"⚠️ Writing to {label}: '{path}'. "
+                        "Make sure this doesn't expose secrets.",
+                    )
+
+        # Check nested patterns (paths like subdir/.git/config)
+        for pattern, label, action in self.nested_protected:
+            if re.search(pattern, rel_lower):
                 if action == "block":
                     return RuleResult.block(
                         call.tool,

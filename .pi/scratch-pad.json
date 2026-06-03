@@ -1,7 +1,12 @@
 [
   {
     "type": "scratch",
-    "key": "loop-detection-tests-summary",
-    "value": "## Loop Detection Session Reset Tests Summary\n\nCreated: /home/tsuser/AI/coding-guardrails/tests/unit/test_loop_session_reset.py\n\n### Test Results\n- **New tests created**: 6 tests across 3 classes\n- **Total passing loop tests**: 13 (7 existing + 6 new)\n\n### Test Coverage\n\n#### TestResetClearsHistory (3 tests)\n1. `test_reset_clears_exact_match` - Records 4 identical calls (would BLOCK on 5th), reset(), then verifies next check is ALLOW\n2. `test_reset_clears_stagnation` - Records 14+ calls cycling 2 tools (triggers stagnation BLOCK), reset(), then verifies next check is ALLOW\n3. `test_reset_clears_tool_history` - Records multiple tool calls, reset(), verifies first call after reset is ALLOW\n\n#### TestSessionDetection (2 tests)\n1. `test_no_assistant_means_new` - Messages with only system+user roles → no assistant detected\n2. `test_assistant_means_existing` - Messages with assistant role → session exists\n\n#### TestResetPreservesThresholds (1 test)\n1. `test_reset_keeps_thresholds` - Custom window/nudge/block thresholds remain unchanged after reset\n\n### Pre-existing Test Issues\n10 tests in `test_text_passthrough.py` fail due to missing pytest-asyncio plugin, but these failures:\n- Are unrelated to loop detection\n- Existed before this change (pre-existing issue)\n- Do not affect the 233+ test suite target (249 total tests, 239 passing)\n\n### Verification\nAll loop detection tests pass:\n- `pytest tests/unit/test_loop_detection.py tests/unit/test_loop_session_reset.py -v`\n- Result: 13 passed, 0 failed"
+    "key": "pi-bash-prefix",
+    "value": "In pi TUI sessions, prefix bash commands with ! instead of exiting pi. E.g., !ls, !pwd, !kill. No need to exit/restart pi for shell commands."
+  },
+  {
+    "type": "scratch",
+    "key": "tmux-copy-mode",
+    "value": "Tmux gotcha: sending C-c multiple times rapidly triggers tmux copy mode (pink bar \"jump forward\"). Fix: send Escape or q to exit copy mode. Always add sleep between C-c sends."
   }
 ]
