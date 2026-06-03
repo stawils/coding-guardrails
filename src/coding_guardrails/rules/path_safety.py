@@ -39,8 +39,9 @@ class PathSafetyRule:
         "/root/.gnupg/",
     ])
     blocked_patterns: list[str] = field(default_factory=lambda: [
-        r"^[A-Za-z]:/",  # Windows absolute path (C:/, D:/, etc.)
+        r"^[A-Za-z]:",  # Windows path with drive letter (C:/, C:\, C:rel)
         r"^//",  # UNC path (//server/share)
+        r"^/\?/",  # Extended-length Windows path (\?\C:\...)
         r"\.\./",
         r"\.\.\\",
     ])
@@ -56,8 +57,9 @@ class PathSafetyRule:
         "/root/.gnupg/",
     ]
     _DEFAULTS_PATTERNS: ClassVar[list[str]] = [
-        r"^[A-Za-z]:/",  # Windows absolute path
+        r"^[A-Za-z]:",  # Windows path with drive letter
         r"^//",  # UNC path
+        r"^/\?/",  # Extended-length Windows path
         r"\.{2}/",
         r"\.{2}\\\\",
     ]
