@@ -68,3 +68,30 @@ def test_clean_command_unchanged():
     call = ToolCall(tool="bash", args={"command": original})
     rule.check(call)
     assert call.args["command"] == original
+
+class TestEdgeCases:
+    def test_empty_command(self):
+        rule = SecretRule()
+        """Empty command should be allowed."""
+        call = ToolCall(tool="bash", args={"command": ""})
+        assert rule.check(call).action == Action.ALLOW
+
+    def test_no_command_arg(self):
+        rule = SecretRule()
+        """Tool calls without command arg should be allowed."""
+        call = ToolCall(tool="bash", args={"path": "/tmp/file"})
+        assert rule.check(call).action == Action.ALLOW
+
+    def test_safe_command_no_secrets(self):
+        rule = SecretRule()
+        """Commands without secrets should be allowed unchanged."""
+        call = ToolCall(tool="bash", args={"command": "ls -la /home/user/"})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+        assert call.args["command"] == "ls -la /home/user/"
+
+    def test_non_bash_tool_ignores(self):
+        rule = SecretRule()
+        """Non-bash tools like 'read' should be allowed."""
+        call = ToolCall(tool="read", args={"path": "/etc/hosts"})
+        assert rule.check(call).action == Action.ALLOW
