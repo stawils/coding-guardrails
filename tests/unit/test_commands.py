@@ -123,3 +123,41 @@ class TestToolMatching:
     def test_non_shell_tools_pass(self, rule, tool):
         call = ToolCall(tool=tool, args={"command": "rm -rf /"})
         assert rule.check(call).action == Action.ALLOW
+
+
+class TestEdgeCases:
+    """Edge cases for command safety rule."""
+
+    def test_empty_command(self, rule):
+        """Empty string should be ALLOW."""
+        result = _check(rule, "")
+        assert result.action == Action.ALLOW, "Empty command should be allowed"
+
+    def test_whitespace_command(self, rule):
+        """Whitespace-only string should be ALLOW."""
+        result = _check(rule, "   ")
+        assert result.action == Action.ALLOW, "Whitespace-only command should be allowed"
+
+    def test_very_long_command(self, rule):
+        """Very long command (10000 chars) of safe text should be ALLOW."""
+        safe_text = "a " * 10000
+        result = _check(rule, safe_text)
+        assert result.action == Action.ALLOW, "Long safe command should be allowed"
+
+    def test_unicode_in_command(self, rule):
+        """Command with unicode characters should be ALLOW if safe."""
+        unicode_cmd = "echo 你好世界 && ls -la 🚀"
+        result = _check(rule, unicode_cmd)
+        assert result.action == Action.ALLOW, "Safe unicode command should be allowed"
+
+    def test_backslash_escape_rm(self, rule):
+        """Backslash-escaped rm that becomes 'rm -rf /' after cleanup should be BLOCK."""
+        # Backslash between 'r' and 'm' gets stripped, making it 'rm -rf /'
+        result = _check(rule, "r\\m -rf /")
+        assert result.action == Action.BLOCK, "Backslash-escaped rm should be blocked (backslash stripped becomes 'rm -rf /')"
+
+    def test_backslash_escape_sudo(self, rule):
+        """Backslash-escaped sudo that becomes 'sudo ls' after cleanup should be BLOCK."""
+        # Backslash between 's' and 'u' gets stripped, making it 'sudo ls'
+        result = _check(rule, "su\\do ls")
+        assert result.action == Action.BLOCK, "Backslash-escaped sudo should be blocked (backslash stripped becomes 'sudo')"
