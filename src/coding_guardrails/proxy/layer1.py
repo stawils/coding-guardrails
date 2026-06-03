@@ -248,7 +248,7 @@ async def run_inference_instrumented(
         if isinstance(response, TextResponse):
             content = response.content.strip()
             has_tool_history = any(
-                m.meta and m.meta.type in (
+                m.metadata and m.metadata.type in (
                     MessageType.TOOL_CALL,
                     MessageType.TOOL_RESULT,
                 )
