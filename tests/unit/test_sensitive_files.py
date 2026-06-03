@@ -165,3 +165,49 @@ class TestEdgeCases:
         """Environment file → NUDGE (not block)."""
         result = _write(rule, ".env")
         assert result.action == Action.NUDGE
+
+
+    def test_docker_config_blocked(self, rule):
+        """Docker config directory -> BLOCK."""
+        result = _write(rule, ".docker/config.json")
+        assert result.action == Action.BLOCK
+
+    def test_gitlab_config_blocked(self, rule):
+        """GitLab config directory -> BLOCK."""
+        result = _write(rule, ".gitlab/issue_templates/default.md")
+        assert result.action == Action.BLOCK
+
+    def test_github_config_blocked(self, rule):
+        """GitHub config directory (not just workflows) -> BLOCK."""
+        result = _write(rule, ".github/CODEOWNERS")
+        assert result.action == Action.BLOCK
+
+    def test_netrc_blocked(self, rule):
+        """Netrc credentials file -> BLOCK."""
+        result = _write(rule, ".netrc")
+        assert result.action == Action.BLOCK
+
+    def test_pypirc_blocked(self, rule):
+        """PyPI credentials file -> BLOCK."""
+        result = _write(rule, ".pypirc")
+        assert result.action == Action.BLOCK
+
+    def test_npmrc_nudged(self, rule):
+        """NPM config (may contain tokens) -> NUDGE."""
+        result = _write(rule, ".npmrc")
+        assert result.action == Action.NUDGE
+
+    def test_nested_docker_blocked(self, rule):
+        """Nested Docker config -> BLOCK."""
+        result = _write(rule, "project/.docker/config.json")
+        assert result.action == Action.BLOCK
+
+    def test_env_production_nudged(self, rule):
+        """Environment variant file -> NUDGE."""
+        result = _write(rule, ".env.production")
+        assert result.action == Action.NUDGE
+
+    def test_env_local_nudged(self, rule):
+        """Environment local variant -> NUDGE."""
+        result = _write(rule, ".env.local")
+        assert result.action == Action.NUDGE
