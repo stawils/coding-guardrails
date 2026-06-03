@@ -103,3 +103,69 @@ class TestUnrelatedTools:
         for tool in ["grep", "find", "respond", "unknown"]:
             call = ToolCall(tool=tool, args={})
             assert rule.check(call).action == Action.ALLOW
+
+
+class TestEdgeCases:
+
+    def test_first_call_allowed(self, rule):
+        """Very first call should be allowed."""
+        # Create a fresh rule instance with higher limits to avoid integer truncation
+        r = SessionBudgetRule(max_file_ops=10, max_commands=10, max_reads=10, warn_at=0.8)
+        call = ToolCall(tool="edit", args={"path": "f.py"})
+        result = r.check(call)
+        # First call (0 ops) should be allowed
+        assert result.action == Action.ALLOW
+        r.record([call])
+        # Still under limit
+        result = r.check(call)
+        assert result.action == Action.ALLOW
+        r.record([call])
+
+    def test_non_tracked_tool_ignored(self, rule):
+        """Tool name not in tracked list should be allowed."""
+        r = SessionBudgetRule(max_file_ops=1, max_commands=1, max_reads=1)
+        # These tools aren't tracked by session_budget
+        for tool in ["grep", "find", "ls", "unknown_tool"]:
+            call = ToolCall(tool=tool, args={})
+            result = r.check(call)
+            assert result.action == Action.ALLOW, f"Tool {tool} should be allowed"
+            r.record([call])
+
+    def test_exactly_at_limit(self, rule):
+        """Calls right at the limit should check behavior."""
+        r = SessionBudgetRule(max_file_ops=2, max_commands=2, warn_at=0.5)
+        # First call (0 ops, 0%)
+        call = ToolCall(tool="edit", args={"path": "f.py"})
+        result = r.check(call)
+        # Should allow
+        assert result.action == Action.ALLOW
+        r.record([call])
+        # Second call (1 op, 50% = at warn threshold)
+        result = r.check(call)
+        # Should nudge at exactly 50% threshold
+        assert result.action == Action.NUDGE
+        r.record([call])
+        # Third call (2 ops, 100% = at limit)
+        result = r.check(call)
+        # Should block at exactly 100%
+        assert result.action == Action.BLOCK
+        r.record([call])
+        # Fourth call should still be blocked
+        result = r.check(call)
+        assert result.action == Action.BLOCK
+
+    def test_reset_clears_count(self, rule):
+        """Record calls, reset(), verify count is 0."""
+        r = SessionBudgetRule(max_file_ops=10, max_commands=20, max_reads=15)
+        # Make some calls
+        for _ in range(5):
+            call = ToolCall(tool="edit", args={"path": "f.py"})
+            r.check(call)
+            r.record([call])
+        assert r._file_ops == 5
+        # Reset counters
+        r.reset()
+        # Verify all counters are cleared
+        assert r._file_ops == 0
+        assert r._commands == 0
+        assert r._reads == 0
