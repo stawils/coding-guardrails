@@ -29,13 +29,20 @@ _DEFAULT_PROTECTED: list[tuple[str, str, str]] = [
     (r"^(\./)?\.ssh/", "SSH directory", "block"),
     (r"^(\./)?\.gnupg/", "GPG directory", "block"),
     # CI/CD pipelines
-    (r"^(\./)?\.github/workflows/", "GitHub Actions workflow", "block"),
+    (r"^(\./)?\.github/", "GitHub config", "block"),
+    (r"^(\./)?\.gitlab/", "GitLab config", "block"),
     (r"^(\./)?\.gitlab-ci\.yml$", "GitLab CI config", "block"),
     (r"^(\./)?Jenkinsfile$|^(\./)?jenkinsfile$", "Jenkins pipeline", "block"),
     (r"^(\./)?\.circleci/", "CircleCI config", "block"),
     # Pre-commit / git hooks
     (r"^(\./)?\.pre-commit-config\.ya?ml$", "Pre-commit config", "block"),
     (r"^(\./)?\.husky/", "Husky git hooks", "block"),
+    # Docker / container configs
+    (r"^(\./)?\.docker/", "Docker config", "block"),
+    # Auth / credential files
+    (r"^(\./)?\.netrc$", "Netrc credentials", "block"),
+    (r"^(\./)?\.npmrc$", "NPM config (may contain tokens)", "nudge"),
+    (r"^(\./)?\.pypirc$", "PyPI credentials", "block"),
     # Secrets
     (r"^(\./)?\.env$", "Environment secrets file", "nudge"),
     (r"^(\./)?\.env\.", "Environment secrets file", "nudge"),
@@ -49,14 +56,21 @@ _NESTED_PROTECTED_PATTERNS: list[tuple[str, str, str]] = [
     # Match .ssh/ anywhere in the path
     (r"/\.ssh/", "SSH directory", "block"),
     (r"/\.gnupg/", "GPG directory", "block"),
-    # Match .github/workflows/ anywhere
-    (r"/\.github/workflows/", "GitHub Actions workflow", "block"),
+    # Match .github/ anywhere
+    (r"/\.github/", "GitHub config", "block"),
+    # Match .gitlab/ anywhere
+    (r"/\.gitlab/", "GitLab config", "block"),
     (r"/\.gitlab-ci\.yml$", "GitLab CI config", "block"),
     (r"/(Jenkinsfile|jenkinsfile)$", "Jenkins pipeline", "block"),
     (r"/\.circleci/", "CircleCI config", "block"),
     # Match .pre-commit-config.yaml file anywhere
     (r"/\.pre-commit-config\.ya?ml$", "Pre-commit config", "block"),
     (r"/\.husky/", "Husky git hooks", "block"),
+    # Docker configs
+    (r"/\.docker/", "Docker config", "block"),
+    # Auth files
+    (r"/\.netrc$", "Netrc credentials", "block"),
+    (r"/\.pypirc$", "PyPI credentials", "block"),
     # Match .env file anywhere (nudge, not block)
     (r"/\.env$", "Environment secrets file", "nudge"),
     (r"/\.env\.", "Environment secrets file", "nudge"),
