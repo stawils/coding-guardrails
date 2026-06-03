@@ -9,6 +9,7 @@ Prevents agents from:
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -37,6 +38,7 @@ _METADATA_PATTERNS: list[tuple[str, str]] = [
     (r"169\.254\.170\.2", "AWS ECS task metadata"),
     (r"metadata\.google\.internal", "GCP metadata endpoint"),
     (r"metadata\.azure\.com", "Azure metadata endpoint"),
+    (r"instance-data\.ec2\.", "EC2 instance metadata"),
 ]
 
 
@@ -87,9 +89,12 @@ class NetworkRule:
         if self._only_targets_allowed(command):
             return RuleResult.allow(call=tool) if not isinstance(tool, str) else RuleResult.allow(tool)
 
+        # URL/hex decode command to catch encoded bypass attempts
+        decoded_command = urllib.parse.unquote(command)
+
         if self.block_uploads:
             for pattern, label in _UPLOAD_PATTERNS:
-                if re.search(pattern, command):
+                if re.search(pattern, command) or re.search(pattern, decoded_command):
                     return RuleResult.block(
                         tool,
                         nudge=f"Network upload blocked: {label} detected. "
@@ -99,7 +104,7 @@ class NetworkRule:
 
         if self.block_metadata:
             for pattern, label in _METADATA_PATTERNS:
-                if re.search(pattern, command):
+                if re.search(pattern, command) or re.search(pattern, decoded_command):
                     return RuleResult.block(
                         tool,
                         nudge=f"Blocked: access to {label} is not allowed.",
@@ -107,15 +112,18 @@ class NetworkRule:
                     )
 
         if self.block_private_ips:
-            # Match IPs in URLs or direct
-            ip_match = re.findall(r"(?:https?://)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", command)
-            for ip in ip_match:
-                if self._is_private_ip(ip):
-                    return RuleResult.block(
-                        tool,
-                        nudge=f"Blocked: request to private IP {ip} is not allowed.",
-                        reason=f"private IP access: {ip}",
-                    )
+            # Match IPs in URLs or direct in both original and decoded
+            def find_ips(text: str) -> list[str]:
+                return re.findall(r"(?:https?://)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", text)
+
+            for source_cmd in (command, decoded_command):
+                for ip in find_ips(source_cmd):
+                    if self._is_private_ip(ip):
+                        return RuleResult.block(
+                            tool,
+                            nudge=f"Blocked: request to private IP {ip} is not allowed.",
+                            reason=f"private IP access: {ip}",
+                        )
 
         return RuleResult.allow(tool)
 
