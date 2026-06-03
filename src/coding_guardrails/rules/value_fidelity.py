@@ -148,10 +148,10 @@ class ValueFidelityRule:
             return RuleResult.block(
                 call.tool,
                 nudge=(
-                    f"Your report contains unresolved placeholder values "
+                    f"Report blocked: contains unresolved placeholder values "
                     f"({', '.join(f'[{p}]' for p in placeholders)}). "
                     f"These are redirect hints from earlier tool results, "
-                    f"not actual data. You must use the RESOLVED values "
+                    f"not actual data. Use the RESOLVED values "
                     f"from subsequent tool calls instead.{correction_text} "
                     f"Rewrite your report with the actual values."
                 ),

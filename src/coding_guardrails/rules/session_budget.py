@@ -49,14 +49,14 @@ class SessionBudgetRule:
             if self._reads >= self.max_reads:
                 return RuleResult.block(
                     call.tool,
-                    nudge=f"Read budget exhausted ({self._reads}/{self.max_reads}). "
-                    "Session limit reached.",
+                    nudge=f"Budget exhausted: read limit reached ({self._reads}/{self.max_reads}). "
+                    "Stop reading and use what you have.",
                     reason=f"read budget: {self._reads}/{self.max_reads}",
                 )
             if self._reads >= int(self.max_reads * self.warn_at) and not self._warned_reads:
                 return RuleResult.nudge(
                     call.tool,
-                    message=f"Read budget: {self._reads}/{self.max_reads} "
+                    message=f"Advisory: Read budget: {self._reads}/{self.max_reads} "
                     f"({self._reads * 100 // self.max_reads}%).",
                 )
 
@@ -65,9 +65,8 @@ class SessionBudgetRule:
             if self._file_ops >= self.max_file_ops:
                 return RuleResult.block(
                     call.tool,
-                    nudge=f"File operation budget exhausted "
-                    f"({self._file_ops}/{self.max_file_ops}). "
-                    "Consider wrapping up.",
+                    nudge=f"Budget exhausted: file operation limit reached ({self._file_ops}/{self.max_file_ops}). "
+                    "Stop editing files.",
                     reason=f"file budget: {self._file_ops}/{self.max_file_ops}",
                 )
             if (self._file_ops >= int(self.max_file_ops * self.warn_at)
@@ -75,9 +74,9 @@ class SessionBudgetRule:
                 self._warned_files = True
                 return RuleResult.nudge(
                     call.tool,
-                    message=f"File operations: {self._file_ops}/{self.max_file_ops} "
+                    message=f"Advisory: File operations: {self._file_ops}/{self.max_file_ops} "
                     f"({self._file_ops * 100 // self.max_file_ops}%). "
-                    "Approaching session limit.",
+                    "You're approaching the session limit.",
                 )
 
         # Track commands
@@ -85,9 +84,8 @@ class SessionBudgetRule:
             if self._commands >= self.max_commands:
                 return RuleResult.block(
                     call.tool,
-                    nudge=f"Command budget exhausted "
-                    f"({self._commands}/{self.max_commands}). "
-                    "Session limit reached.",
+                    nudge=f"Budget exhausted: command limit reached ({self._commands}/{self.max_commands}). "
+                    "Stop executing commands.",
                     reason=f"command budget: {self._commands}/{self.max_commands}",
                 )
             if (self._commands >= int(self.max_commands * self.warn_at)
@@ -95,9 +93,9 @@ class SessionBudgetRule:
                 self._warned_commands = True
                 return RuleResult.nudge(
                     call.tool,
-                    message=f"Commands: {self._commands}/{self.max_commands} "
+                    message=f"Advisory: Commands: {self._commands}/{self.max_commands} "
                     f"({self._commands * 100 // self.max_commands}%). "
-                    "Approaching session limit.",
+                    "You're approaching the session limit.",
                 )
 
         return RuleResult.allow(call.tool)

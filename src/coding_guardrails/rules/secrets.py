@@ -90,14 +90,14 @@ class SecretRule:
         if self.action == "block":
             return RuleResult.block(
                 call.tool,
-                nudge=f"Secret detected and blocked: {labels}. "
+                nudge=f"Secret blocked: {labels} detected in output. "
                 "Do not include secrets in tool arguments.",
                 reason=f"secrets detected: {labels}",
             )
 
         return RuleResult.nudge(
             call.tool,
-            message=f"Secret detected and masked for safety: {labels}.",
+            message=f"Advisory: Secret {labels} detected and masked for safety.",
         )
 
     def record(self, calls: list[ToolCall]) -> None:
