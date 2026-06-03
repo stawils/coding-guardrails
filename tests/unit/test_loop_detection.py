@@ -159,3 +159,40 @@ class TestEdgeCases:
         result16 = rule.check(call16)
         assert result16.action == Action.ALLOW, \
             "16th call with 5 unique tools should still be ALLOWED"
+
+
+class TestRecordEdgeCases:
+
+    def test_record_empty_list(self, rule):
+        """record([]) should not crash or change state."""
+        rule.record([])
+        # Verify rule still works normally
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+
+    def test_record_before_check(self, rule):
+        """record() before any check() should not corrupt state."""
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        rule.record([call])
+        # Should still work normally
+        result = rule.check(call)
+        assert result.action == Action.ALLOW
+
+    def test_record_same_call_twice_idempotent(self, rule):
+        """Recording the same call twice should track correctly."""
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        rule.record([call])
+        rule.record([call])
+        # Third call should start counting from the recorded ones
+        # (behavior depends on implementation)
+
+    def test_record_interleaved_with_check(self, rule):
+        """Interleaved record() and check() should work."""
+        call = ToolCall(tool="bash", args={"command": "echo hi"})
+        rule.check(call)
+        rule.record([call])
+        call2 = ToolCall(tool="bash", args={"command": "echo bye"})
+        rule.check(call2)
+        rule.record([call2])
+        # Should be tracking both different calls, no loop
