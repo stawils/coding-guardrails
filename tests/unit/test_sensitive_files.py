@@ -136,3 +136,32 @@ class TestExtraProtected:
         )
         result = _write(rule, "local.env")
         assert result.action == Action.NUDGE
+
+
+class TestEdgeCases:
+    """Edge-case tests for sensitive file rule."""
+
+    def test_bash_tool_not_checked(self, rule):
+        """bash tool with path arg → ALLOW (rule only checks write tools)."""
+        result = _write(rule, ".git/config", tool="bash")
+        assert result.action == Action.ALLOW
+
+    def test_empty_path(self, rule):
+        """Empty string path → ALLOW."""
+        result = _write(rule, "")
+        assert result.action == Action.ALLOW
+
+    def test_normal_file(self, rule):
+        """Normal file path → ALLOW."""
+        result = _write(rule, "src/main.py")
+        assert result.action == Action.ALLOW
+
+    def test_nested_git_internals(self, rule):
+        """Nested git internals path → BLOCK."""
+        result = _write(rule, "subdir/.git/config")
+        assert result.action == Action.BLOCK
+
+    def test_env_file_nudged(self, rule):
+        """Environment file → NUDGE (not block)."""
+        result = _write(rule, ".env")
+        assert result.action == Action.NUDGE
