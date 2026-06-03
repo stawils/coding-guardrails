@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 233 tests, ~0.1s
+pytest tests/unit/ -q          # 373 tests, ~1.8s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -143,11 +143,11 @@ tmux new-session -s workspace -c ~/AI/<project-dir>
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 233 tests
+pytest tests/unit/ -q              # All 373 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 233 tests must pass before committing.
+All 373 tests must pass before committing.
 
 ## Eval
 
