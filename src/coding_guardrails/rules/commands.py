@@ -87,6 +87,10 @@ class CommandSafetyRule:
         r"cat\s+/etc/shadow",
         r"cat\s+/root/.ssh",
         r"cp\s+/etc/shadow",
+        # Bypass prevention patterns
+        r"rm\s*\\\s*-rf",          # backslash-escaped rm
+        r"bash\s+-c\s+.*\$\(",    # command substitution in bash -c
+        r"\x60[^%].*\x60",         # backtick execution
     ])
 
     require_confirmation: list[str] = field(default_factory=lambda: [
@@ -120,18 +124,21 @@ class CommandSafetyRule:
     def _check_command(self, command: str, tool: str) -> RuleResult | None:
         """Check a single command string. Returns None if safe."""
 
-        # Hard blocks — exact matches (prefix-based)
+        # Strip backslash escapes between chars (r\m → rm, su\do → sudo)
+        cleaned = re.sub(r"\\(?=[a-zA-Z])", "", command)
+
+        # Hard blocks — exact matches (prefix-based) - check both original and cleaned
         for blocked in (self.blocked or []):
-            if command.strip().startswith(blocked):
+            if command.strip().startswith(blocked) or cleaned.strip().startswith(blocked):
                 return RuleResult.block(
                     tool,
                     nudge=f"Command blocked for safety: '{blocked}...'",
                     reason=f"blocked command: {command[:100]}",
                 )
 
-        # Hard blocks — pattern matches
+        # Hard blocks — pattern matches - check both original and cleaned
         for pattern in (self.blocked_patterns or []):
-            if re.search(pattern, command, re.IGNORECASE):
+            if re.search(pattern, command, re.IGNORECASE) or re.search(pattern, cleaned, re.IGNORECASE):
                 return RuleResult.block(
                     tool,
                     nudge="Command blocked: contains a dangerous pattern.",
