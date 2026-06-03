@@ -86,6 +86,46 @@ class TestAllowedHosts:
         assert result.action == Action.ALLOW
 
 
+class TestEncodedIPBypass:
+    """Test that URL-encoded and hex-encoded IPs are properly detected."""
+
+    def test_url_encoded_metadata_ip_blocked(self, rule):
+        # URL-encoded 169.254.169.254
+        encoded_ip = "%31%36%39%2E%32%35%34%2E%31%36%39%2E%32%35%34"
+        call = ToolCall(tool="bash", args={"command": f"curl http://{encoded_ip}/latest/meta-data/"})
+        assert rule.check(call).action == Action.BLOCK
+
+    def test_url_encoded_metadata_ip_blocked_with_curl(self, rule):
+        # curl with URL-encoded IP
+        encoded_ip = "%31%36%39%2E%32%35%34%2E%31%36%39%2E%32%35%34"
+        call = ToolCall(tool="bash", args={"command": f"curl http://127.0.0.1 -H 'Host: {encoded_ip}'"})
+        assert rule.check(call).action == Action.BLOCK
+
+    def test_url_encoded_ip_blocked(self, rule):
+        # Fully URL-encoded version of 169.254.169.254
+        url_encoded = "%31%36%39%2E%32%35%34%2E%31%36%39%2E%32%35%34"
+        call = ToolCall(tool="bash", args={"command": f"curl http://{url_encoded}/metadata"})
+        assert rule.check(call).action == Action.BLOCK
+
+    def test_partial_encoded_ip_blocked(self, rule):
+        # Partial URL-encoded IP
+        encoded_ip = "%31%36%39"
+        call = ToolCall(tool="bash", args={"command": f"curl http://{encoded_ip}.254.169.254/metadata"})
+        assert rule.check(call).action == Action.BLOCK
+
+    def test_encoded_ip_in_url_path(self, rule):
+        # Encoded IP in URL path
+        encoded_ip = "%31%36%39%2E%32%35%34%2E%31%36%39%2E%32%35%34"
+        call = ToolCall(tool="bash", args={"command": f"curl /metadata/{encoded_ip}/latest/"})
+        assert rule.check(call).action == Action.BLOCK
+
+    def test_re_encoded_ip_blocked(self, rule):
+        # Mixed encoding: some chars encoded, some not
+        mixed = "%31%36%39.254.%31%36%39.254"
+        call = ToolCall(tool="bash", args={"command": f"curl http://{mixed}/metadata"})
+        assert rule.check(call).action == Action.BLOCK
+
+
 class TestToolMatching:
 
     @pytest.mark.parametrize("tool", [
