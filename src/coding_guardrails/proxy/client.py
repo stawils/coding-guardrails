@@ -37,6 +37,9 @@ class SafeLlamafileClient(LlamafileClient):
     def __init__(self, *args: Any, default_max_tokens: int = 8192, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._default_max_tokens = default_max_tokens
+        # Ensure resolved_mode exists even if parent init didn't set it
+        if not hasattr(self, "resolved_mode"):
+            self.resolved_mode = None
         # Thinking tokens from the most recent response.
         # Populated regardless of whether the response was tool calls or text.
         self.last_thinking: str = ""
@@ -65,19 +68,19 @@ class SafeLlamafileClient(LlamafileClient):
         """Send and capture thinking tokens."""
         self.last_thinking = ""
 
-        # Resolve mode on first call (same as parent)
-        if self.resolved_mode is None:
-            return await self._resolve_and_send(messages, tools, sampling)
-        elif self.resolved_mode == "native":
-            return await self._send_native(messages, tools, sampling)
-        else:
-            return await self._send_prompt(messages, tools, sampling)
+        result = await super().send(messages, tools=tools, sampling=sampling)
+        # Capture thinking from the response
+        if hasattr(result, 'thinking') and result.thinking:
+            self.last_thinking = result.thinking
+        return result
 
     async def _send_native(
         self,
         messages: list[dict[str, str]],
         tools: list[ToolSpec] | None,
         sampling: dict[str, Any] | None = None,
+        passthrough: dict[str, Any] | None = None,
+        raw_openai_tools: Any = None,
     ) -> LLMResponse:
         """Native FC send that preserves reasoning in empty-text responses."""
         merged = _merge_consecutive(messages)
@@ -141,6 +144,7 @@ class SafeLlamafileClient(LlamafileClient):
         messages: list[dict[str, str]],
         tools: list[ToolSpec] | None,
         sampling: dict[str, Any] | None = None,
+        passthrough: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Prompt-injected send that preserves reasoning in empty-text responses."""
         prepared = _merge_consecutive(_downgrade_messages(messages))
