@@ -86,6 +86,8 @@ class PathSafetyRule:
         # Expand environment variables and user home
         expanded = os.path.expandvars(os.path.expanduser(path))
         normalized = os.path.normpath(expanded)
+        # Resolve symlinks to prevent symlink-based escapes
+        resolved = os.path.realpath(normalized)
 
         # Check blocked patterns (path traversal)
         for pattern in self.blocked_patterns:
@@ -96,9 +98,10 @@ class PathSafetyRule:
                     reason=f"path traversal: {path}",
                 )
 
-        # Check blocked prefixes
+        # Check blocked prefixes (both normalized and symlink-resolved paths)
         for prefix in self.blocked_prefixes:
-            if normalized.startswith(prefix) or normalized.startswith(os.path.normpath(prefix)):
+            norm_prefix = os.path.normpath(prefix)
+            if normalized.startswith(norm_prefix) or resolved.startswith(norm_prefix):
                 return RuleResult.block(
                     tool,
                     nudge=f"Path '{path}' is outside the allowed workspace.",
@@ -111,7 +114,7 @@ class PathSafetyRule:
             for allowed_prefix in self.allowlist:
                 expanded_prefix = os.path.expandvars(os.path.expanduser(allowed_prefix))
                 norm_prefix = os.path.normpath(expanded_prefix)
-                if normalized.startswith(norm_prefix):
+                if normalized.startswith(norm_prefix) and resolved.startswith(norm_prefix):
                     allowed = True
                     break
             if not allowed:
