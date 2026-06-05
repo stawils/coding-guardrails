@@ -5,7 +5,7 @@
  } from "../../shared/types.ts";
  
 +/**
-+ * Acceptance report parser — lenient multi-strategy extraction.
++ * Acceptance report parser - lenient multi-strategy extraction.
 + *
 + * Models frequently emit valid JSON but with non-standard fence tags
 + * (```` ```json ```` instead of ```` ```acceptance-report ````), with
@@ -15,7 +15,7 @@
 + *
 + * Strategies (in order):
 + *   1. Classic fenced block tagged `acceptance-report`.
-+ *   2. Fenced block tagged `json`, `jsonc`, `json5`, or plain — body must
++ *   2. Fenced block tagged `json`, `jsonc`, `json5`, or plain - body must
 + *      contain a valid report (reject unrelated JSON blocks).
 + *   3. `ACCEPTANCE_REPORT:` marker followed by balanced JSON.
 + *   4. Any standalone balanced JSON object in the output that matches
@@ -81,7 +81,7 @@
 +/**
 + * Strip leading non-JSON noise from inside a fence body.
 + * Removes lines like "acceptance-report", "Here is my report:",
-+ * "```", trailing/leading whitespace — anything before the first `{`.
++ * "```", trailing/leading whitespace - anything before the first `{`.
 + */
 +function stripLeadingNoise(body: string): string {
 +	const start = body.indexOf("{");
@@ -99,19 +99,19 @@
  
  function isStringArray(value: unknown): value is string[] {
  	return Array.isArray(value) && value.every((item) => typeof item === "string");
-@@ -125,3 +128,115 @@
+@@ -125,3 +128,125 @@
  		|| report.reviewFindings !== undefined;
  }
  
 +/**
-+ * Tolerant JSON.parse — strips trailing commas, JSONC comments, and
++ * Tolerant JSON.parse - strips trailing commas, JSONC comments, and
 + * single-line // comments before parsing.
 + */
 +function tolerantJsonParse(text: string): unknown {
 +	let cleaned = text;
-+	// Strip /* … */ block comments
++	// Strip /* ... */ block comments
 +	cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, "");
-+	// Strip // line comments (only outside strings — best-effort)
++	// Strip // line comments (only outside strings - best-effort)
 +	cleaned = cleaned.replace(/^(\s*\/\/.*)$/gm, "");
 +	// Strip trailing commas: ,] or ,} (with optional whitespace)
 +	cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
@@ -120,24 +120,32 @@
 +
 +/**
 + * Try to parse `body` as JSON, then validate as an acceptance report.
-+ * Accepts both top-level report objects and `{ "acceptance": {…} }` wrappers.
++ * Accepts both top-level report objects and common wrappers:
++ *   - { "acceptance": {...} }              (legacy)
++ *   - { "acceptance-report": {...} }       (models sometimes use the fence tag as key)
 + * Returns undefined if parsing fails or the result isn't a valid report.
 + */
 +function tryParseReport(body: string): AcceptanceReport | undefined {
 +	const candidates: string[] = [];
 +	const direct = extractFirstJsonObject(body);
 +	if (direct) candidates.push(direct);
-+	// Also try stripping leading prose like "acceptance-report\n{…}"
++	// Also try stripping leading prose like "acceptance-report\n{...}"
 +	const stripped = extractFirstJsonObject(stripLeadingNoise(body));
 +	if (stripped && stripped !== direct) candidates.push(stripped);
 +
 +	for (const candidate of candidates) {
 +		try {
 +			const parsed = tolerantJsonParse(candidate) as unknown;
-+			const report = (parsed && typeof parsed === "object" && "acceptance" in parsed)
-+				? (parsed as { acceptance?: unknown }).acceptance
-+				: parsed;
-+			if (isAcceptanceReport(report)) return report;
++			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
++				const obj = parsed as Record<string, unknown>;
++				// Recognized wrapper keys — unwrap before validating
++				const wrapped = obj.acceptance ?? obj["acceptance-report"];
++				if (wrapped && typeof wrapped === "object") {
++					if (isAcceptanceReport(wrapped)) return wrapped;
++					continue; // wrapper present but inner shape invalid → don't fall through to outer check
++				}
++			}
++			if (isAcceptanceReport(parsed)) return parsed;
 +		} catch {
 +			// try next candidate
 +		}
@@ -160,7 +168,7 @@
 +		errors.push("acceptance-report fence: body did not parse as a valid report");
 +	}
 +
-+	// ── Strategy 2: lenient fence — `json`, `jsonc`, `json5`, or plain ──
++	// ── Strategy 2: lenient fence - `json`, `jsonc`, `json5`, or plain ──
 +	// Only accepts fenced JSON that LOOKS like a report (heuristic: must
 +	// have at least one acceptance-report field) to avoid matching
 +	// unrelated code blocks.
@@ -183,7 +191,7 @@
 +		errors.push("ACCEPTANCE_REPORT marker: JSON after marker did not parse");
 +	}
 +
-+	// ── Strategy 4: last-resort — find any JSON object that parses as a report ──
++	// ── Strategy 4: last-resort - find any JSON object that parses as a report ──
 +	// Scan the entire output for `{` and try each balanced object. This
 +	// catches cases where the model emitted raw JSON with no fence at all.
 +	const scanned: number[] = [];
@@ -195,10 +203,12 @@
 +		if (!candidate) continue;
 +		try {
 +			const parsed = tolerantJsonParse(candidate) as unknown;
-+			const report = (parsed && typeof parsed === "object" && "acceptance" in parsed)
-+				? (parsed as { acceptance?: unknown }).acceptance
-+				: parsed;
-+			if (isAcceptanceReport(report)) return { report };
++			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
++				const obj = parsed as Record<string, unknown>;
++				const wrapped = obj.acceptance ?? obj["acceptance-report"];
++				if (wrapped && typeof wrapped === "object" && isAcceptanceReport(wrapped)) return { report: wrapped as AcceptanceReport };
++			}
++			if (isAcceptanceReport(parsed)) return { report: parsed as AcceptanceReport };
 +		} catch {
 +			// not valid JSON at this position
 +		}

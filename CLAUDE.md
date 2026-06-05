@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 373 tests, ~1.8s
+pytest tests/unit/ -q          # 402 tests, ~1.8s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -97,7 +97,8 @@ Layer 1 captures thinking tokens from the model's response. On retry (failed val
 |---------|---------|------|
 | `llm-server` | `llama-server` with model | :8080 |
 | `guardrails` | `coding-guardrails serve` | :8081 |
-| `workspace` | Working directory for testing via pi | — |
+
+No workspace session — delegation is done via Pi subagents (`subagent()` tool) pointing at the proxy.
 
 ```bash
 # Session 1: LLM backend (use LM Studio's llama-server — supports DeltaNet models)
@@ -127,15 +128,17 @@ $LLAMA \
   -c 256000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 
-# Session 2: Guardrails proxy
+# Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
   --model <model-name> \
-  --port 8081 -v
+  --port 8081 \
+  --config configs/guardrail-config.yaml \
+  -v
 
-# Session 3: Workspace (for pi or testing)
-tmux new-session -s workspace -c ~/AI/<project-dir>
+# No workspace session needed — use Pi subagents for delegation:
+#   subagent({ agent: "worker", model: "coding-guardrails/<model>", ... })
 ```
 
 ### Notes
@@ -146,15 +149,17 @@ tmux new-session -s workspace -c ~/AI/<project-dir>
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - `recommended_sampling=False` — model not in Forge's registry
+- any md file writing should be in gitignored plans/ folder.
+- use one subagent at a time , no parallel agents.
 
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 373 tests
+pytest tests/unit/ -q              # All 402 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 373 tests must pass before committing.
+All 402 tests must pass before committing.
 
 ## Eval
 
@@ -179,7 +184,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 233 unit tests must pass
+- All 385 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -190,20 +195,125 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 SemVer: `MAJOR.MINOR.PATCH`
 
 - **PATCH**: Bug fixes, no new features
-- **MINOR**: New features, new rules, backward-compatible
+- **MINOR**: New features, new rules, new model profiles, backward-compatible
 - **MAJOR**: Breaking API changes
 
-### Release Process
+### Full Release Process
 
-1. Update `version` in `pyproject.toml`
-2. Update README/CLAUDE.md if needed
-3. `pytest tests/unit/ -q` — all 233 must pass
-4. `git commit -m "vX.Y.Z: description" && git push`
-5. `git tag vX.Y.Z && git push origin vX.Y.Z`
-6. GitHub Actions: test → build → verify CLI → publish to PyPI
+Every release follows these steps **in order**. Do not skip any step.
+
+#### 1. Bump version
+
+```bash
+# Edit pyproject.toml — change version to the new number
+# PATCH example: 0.9.0 → 0.9.1 (bug fix)
+# MINOR example: 0.9.1 → 0.10.0 (new feature/model)
+# MAJOR example: 0.10.0 → 1.0.0 (breaking change)
+```
+
+#### 2. Run tests
+
+```bash
+source .venv/bin/activate
+pytest tests/unit/ -q          # All 402 tests MUST pass
+```
+
+If any test fails → **stop**, fix, re-run. Do not proceed.
+
+#### 3. Update docs
+
+Update `CLAUDE.md` and `docs/models.md` if the change affects:
+- Model profiles
+- Boot commands
+- Running instructions
+- Test counts
+
+#### 4. Stage and commit
+
+```bash
+git add pyproject.toml src/ docs/ CLAUDE.md  # only changed files
+git commit -m "vX.Y.Z: short description"
+```
+
+Commit message format: `vX.Y.Z: description` (imperative mood).
+
+#### 5. Push to main
+
+```bash
+git push origin main
+```
+
+Verify push succeeded. This triggers CI (test + lint) but does NOT publish.
+
+#### 6. Tag the release
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+This triggers the full CI pipeline: test → build → verify CLI → **publish to PyPI**.
+
+#### 7. Verify CI passed
+
+```bash
+gh run list --limit 3
+gh run view <run-id>   # all 3 jobs green: test, build, publish-pypi
+```
+
+Wait for all jobs to show ✅. If anything fails → fix, bump PATCH, restart from step 1.
+
+#### 8. Create GitHub Release
+
+**GitHub Releases are NOT automatic.** CI publishes to PyPI, but the Releases page
+needs a manual step. Without this, the GitHub Releases tab shows stale versions.
+
+```bash
+gh release create vX.Y.Z \
+  --title "vX.Y.Z" \
+  --notes "## What's New
+
+- Change 1
+- Change 2
+
+### Full Changelog
+https://github.com/stawils/coding-guardrails/compare/vPREV...vX.Y.Z"
+```
+
+#### 9. Refresh local install
+
+```bash
+uv pip install -e ".[dev]"
+coding-guardrails --version    # verify it matches vX.Y.Z
+```
+
+### Quick Reference (copy-paste)
+
+```bash
+# Replace X.Y.Z and PREV with actual versions
+VERSION=X.Y.Z PREV=X.PREV.Z
+source .venv/bin/activate
+pytest tests/unit/ -q
+git add -A && git commit -m "v${VERSION}: description"
+git push origin main
+git tag v${VERSION} && git push origin v${VERSION}
+# Wait for CI...
+gh run list --limit 1  # confirm green
+gh release create v${VERSION} --title "v${VERSION}" --notes "## What's New\n\n- Description\n\n### Full Changelog\nhttps://github.com/stawils/coding-guardrails/compare/v${PREV}...v${VERSION}"
+uv pip install -e ".[dev]" && coding-guardrails --version
+```
 
 ### CI Pipeline
 
-- Push to `main`: tests + lint
-- Tag `v*`: build → verify → publish to PyPI (trusted publishing, no tokens)
-- Refresh local: `uv pip install -e ".[dev]" && coding-guardrails --version`
+- **Push to `main`**: tests + lint (no publish)
+- **Tag `v*`**: test → build → verify CLI → publish to PyPI (trusted publishing, no tokens)
+- **GitHub Release**: manual step via `gh release create` (PyPI is automatic, GitHub Releases is not)
+
+### Common Mistakes
+
+| Mistake | Result | Fix |
+|---------|--------|-----|
+| Committing but not pushing | Tags point to unreachable commits | Always `git push origin main` BEFORE tagging |
+| Tagging without pushing main first | CI can't find the commit | Push main first, then tag |
+| Forgetting `gh release create` | GitHub Releases page shows old version | Always create the release after CI passes |
+| Skipping tests | Broken release on PyPI | Never skip step 2 |

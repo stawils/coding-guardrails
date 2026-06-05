@@ -1,6 +1,22 @@
 --- a/src/runs/shared/acceptance-finalization.ts
 +++ b/src/runs/shared/acceptance-finalization.ts
-@@ -73,7 +73,9 @@
+@@ -33,6 +33,15 @@
+ 		"You are continuing the same subagent session. Before this run can be accepted, compare the current work to the acceptance contract and the evidence below.",
+ 		`This is finalization turn ${input.turn} of ${input.maxTurns}. The run will be rejected if the contract is still not satisfied after turn ${input.maxTurns}.`,
+ 		"",
++		"## Finalization priority — READ THIS FIRST",
++		"Decision tree (apply in order):",
++		"  1. Did the initial turn already complete the task AND emit the acceptance-report block? Then just emit the block again (you can copy the previous one verbatim) and STOP.",
++		"  2. Did the initial turn complete the task but FAIL to emit the report? Then emit ONLY the report block — do NOT attempt more tool calls. The work is done; you just need to write the JSON.",
++		"  3. Did the initial turn get BLOCKED (edit blocked, budget exhausted, etc.) before finishing? Then stop and report `status: 'not-satisfied'` for any unmet criteria, with residualRisks explaining the blocker. Do NOT retry the blocked operation.",
++		"  4. Did the initial turn finish but the result is genuinely incomplete? Then do the minimal extra work needed, then emit the report.",
++		"",
++		"In all cases: END with the ```acceptance-report``` block. Do not call tools after emitting it. Do not emit prose after it.",
++		"",
+ 		"If a criterion is incomplete and fixable in this session, keep working now before returning the final report.",
+ 		"If a criterion cannot be satisfied in this session, report it as not-satisfied, explain the blocker in residualRisks, and say what input would unblock progress.",
+ 		"Do not claim a criterion is satisfied unless the current work has concrete evidence from files, commands, validation output, or other inspectable artifacts.",
+@@ -73,7 +82,9 @@
  	}
  	lines.push(
  		"",
