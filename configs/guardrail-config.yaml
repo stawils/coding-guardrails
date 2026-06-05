@@ -43,33 +43,40 @@ secrets:
 
 prerequisites:
   enabled: true
-  strength: soft  # soft = nudge first, hard = block until read
-  cooldown: 3     # turns before re-nudging
+  max_violations: 4   # Block after 4 unread edits (was 2 — too aggressive)
   edit_tools:
-    - "write_file"
-    - "edit_file"
-    - "create_file"
+    - "edit"
+    - "write"
+    - "create"
   read_tools:
-    - "read_file"
+    - "read"
     - "cat"
+    - "head"
+    - "tail"
+    - "less"
 
 sequencing:
   enabled: true
   strength: soft  # soft = suggest, hard = block until test runs
   cooldown: 3
-  edit_tools:
-    - "write_file"
-    - "edit_file"
-    - "create_file"
-  test_tools:
+  trigger_prefixes:
+    - "edit"
+    - "write"
+    - "create"
+  suggest_prefixes:
     - "bash"
-  test_commands:
-    - "pytest"
-    - "test"
-    - "cargo test"
-    - "go test"
+    - "shell"
+    - "exec"
+  nudge: "Consider running tests to verify your changes."
 
 tool_resolution:
   enabled: true
   strength: soft  # soft = nudge only
   # Nudges when tool results are empty, whitespace-only, or permission errors
+
+session_budget:
+  enabled: true
+  max_file_ops: 300    # 100 was too low for multi-file tasks with retries
+  max_commands: 500    # 200 was too low — model uses sed/head/awk to inspect
+  max_reads: 0         # unlimited reads (model must read before editing)
+  warn_at: 0.85

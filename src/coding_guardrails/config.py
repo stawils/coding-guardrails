@@ -52,16 +52,37 @@ def load_config(path: str | Path) -> dict:
 
 
 def load_guardrail_config(path: str | Path | None = None) -> dict:
-    """Load just the guardrails section of a config file.
+    """Load the guardrails config from a YAML file.
+
+    Supports two layouts:
+      1. Rules at top level (preferred, matches configs/guardrail-config.yaml):
+         ```
+         prerequisites: {...}
+         session_budget: {...}
+         ```
+      2. Rules nested under a `guardrails:` key (legacy):
+         ```
+         guardrails:
+           prerequisites: {...}
+           session_budget: {...}
+         ```
+
+    If both layouts are present, the nested form wins (more explicit).
 
     Args:
-        path: Path to the YAML config file. If None, returns defaults.
+        path: Path to the YAML config file. If None, returns defaults (empty dict).
 
     Returns:
-        The "guardrails" section of the config, or empty dict for defaults.
+        Config dict consumed by `CodingGuardrails.from_config()`.
     """
     if path is None:
         return {}
 
     full_config = load_config(path)
-    return full_config.get("guardrails", {})
+    if not isinstance(full_config, dict):
+        return {}
+
+    nested = full_config.get("guardrails")
+    if isinstance(nested, dict):
+        return nested
+    return full_config

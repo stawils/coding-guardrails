@@ -17,6 +17,11 @@ from coding_guardrails.rules.base import Action, RuleResult, ToolCall
 # Aider, OpenCode, and generic agents.
 _DEFAULT_EDIT_TOOLS = ("edit", "write", "create")
 _DEFAULT_READ_TOOLS = ("read", "cat", "head", "tail", "less")
+# Tools that create new files from scratch — no prior read needed for
+# non-existent paths. 'edit' is intentionally excluded: editing a
+# non-existent file is usually a mistake (wrong path) and should be
+# nudged so the agent double-checks.
+_DEFAULT_CREATE_TOOLS = ("write", "create")
 
 
 def _tool_matches(tool: str, prefixes: tuple[str, ...]) -> bool:
@@ -35,16 +40,23 @@ class PrerequisiteRule:
     Smart matching:
     - Directory reads satisfy all files under that directory.
     - read(src/main.py) satisfies edit(src/main.py.bak) (same directory).
+    - For 'write'/'create' tools on non-existent paths (new files), no
+      prior read is required — there's nothing to read. This fixes the
+      parallel-write scaffolding case where an agent creates many new
+      files in one turn without reading each first.
 
     Attributes:
         edit_tools: Tool name prefixes that require a prior read.
         read_tools: Tool name prefixes that satisfy the read requirement.
+        create_tools: Tool name prefixes exempt from the read requirement
+            when the target path doesn't exist.
         match_arg: Argument name containing the file path.
         max_violations: Block after this many consecutive violations.
     """
 
     edit_tools: tuple[str, ...] = _DEFAULT_EDIT_TOOLS
     read_tools: tuple[str, ...] = _DEFAULT_READ_TOOLS
+    create_tools: tuple[str, ...] = _DEFAULT_CREATE_TOOLS
     match_arg: str = "path"
     max_violations: int = 2
 
@@ -66,6 +78,16 @@ class PrerequisiteRule:
 
         # Normalize: expand user, strip trailing slashes
         normalized = os.path.normpath(os.path.expanduser(path))
+
+        # 'write'/'create' on a non-existent path = new file → no read needed.
+        # 'edit' on non-existent path still requires read (defensive — usually
+        # a typo/wrong path).
+        if (
+            _tool_matches(call.tool, self.create_tools)
+            and not os.path.exists(normalized)
+        ):
+            self._violation_count = 0
+            return RuleResult.allow(call.tool)
 
         if not self._has_been_read(normalized):
             self._violation_count += 1
