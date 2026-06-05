@@ -234,3 +234,81 @@ class TestRecordEdgeCases:
         rule.record([call2])
         result = rule.check(call3)
         assert result.action == Action.NUDGE
+
+
+# ── Regression tests for stagnation rule refinement (F6 fix) ─────────────────
+
+class TestStagnationBatchWorkRefinement:
+    """F6 fix: stagnation should NOT fire when agent makes progress via
+    distinct paths (e.g. scaffolding 10 files with write+ls).
+    """
+
+    def test_scaffolding_many_distinct_files_allowed(self):
+        """14 write() calls each on a different path → ALLOWED (batch work)."""
+        rule = LoopDetectionRule(
+            window=20,
+            stagnation_threshold=14,
+            stagnation_unique_tools=2,
+        )
+        # Record 13 distinct write calls + ls each
+        for i in range(13):
+            rule.record([
+                ToolCall(tool="write", args={"path": f"/tmp/file{i}.js", "content": "..."}),
+                ToolCall(tool="bash", args={"command": f"ls /tmp/file{i}.js"}),
+            ])
+        # 14th call: write to yet another new path
+        result = rule.check(ToolCall(tool="write", args={"path": "/tmp/file13.js"}))
+        assert result.action == Action.ALLOW, (
+            f"Expected ALLOW for batch work, got {result.action}: "
+            f"{getattr(result, 'reason', '')}"
+        )
+
+    def test_repeated_path_stagnation_blocked(self):
+        """14 calls on the SAME path → still BLOCKED (real stagnation)."""
+        rule = LoopDetectionRule(
+            window=20,
+            stagnation_threshold=14,
+            stagnation_unique_tools=2,
+        )
+        for _ in range(13):
+            rule.record([
+                ToolCall(tool="write", args={"path": "/tmp/same.js", "content": "x"}),
+                ToolCall(tool="bash", args={"command": "ls /tmp/same.js"}),
+            ])
+        # 14th call: same path again
+        result = rule.check(ToolCall(tool="write", args={"path": "/tmp/same.js"}))
+        assert result.action == Action.BLOCK
+
+    def test_mixed_some_repeats_allowed_at_threshold(self):
+        """If 70% of paths are distinct, allow (borderline batch work)."""
+        rule = LoopDetectionRule(
+            window=20,
+            stagnation_threshold=10,
+            stagnation_unique_tools=2,
+        )
+        # 8 unique paths + 2 repeats = 80% distinct → allowed
+        paths = [f"/tmp/u{i}.js" for i in range(8)] + ["/tmp/r.js", "/tmp/r.js"]
+        for p in paths[:9]:
+            rule.record([
+                ToolCall(tool="write", args={"path": p, "content": "..."}),
+                ToolCall(tool="bash", args={"command": f"ls {p}"}),
+            ])
+        # 10th call: another new path
+        result = rule.check(ToolCall(tool="write", args={"path": "/tmp/new10.js"}))
+        assert result.action == Action.ALLOW
+
+    def test_path_extraction_supports_file_path_arg(self):
+        """Some agents use 'file_path' instead of 'path'."""
+        rule = LoopDetectionRule(stagnation_threshold=4, stagnation_unique_tools=2)
+        for i in range(3):
+            rule.record([ToolCall(tool="write", args={"file_path": f"/tmp/x{i}.js"})])
+        result = rule.check(ToolCall(tool="write", args={"file_path": "/tmp/x3.js"}))
+        assert result.action == Action.ALLOW
+
+    def test_call_history_does_not_leak_between_rules(self):
+        """Each rule instance has independent history."""
+        r1 = LoopDetectionRule()
+        r2 = LoopDetectionRule()
+        r1.record([ToolCall(tool="write", args={"path": "/tmp/a"})])
+        # r2 should not see r1's history
+        assert len(r2._call_history) == 0

@@ -76,10 +76,12 @@ class LoopDetectionRule:
 
     _history: deque = field(default_factory=lambda: deque(maxlen=10), repr=False)
     _tool_history: deque = field(default_factory=lambda: deque(maxlen=10), repr=False)
+    _call_history: deque = field(default_factory=lambda: deque(maxlen=20), repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_history", deque(maxlen=self.window))
         object.__setattr__(self, "_tool_history", deque(maxlen=self.window))
+        object.__setattr__(self, "_call_history", deque(maxlen=max(self.stagnation_threshold * 2, 20)))
 
     @property
     def name(self) -> str:
@@ -117,20 +119,40 @@ class LoopDetectionRule:
         if len(recent_tools) >= self.stagnation_threshold:
             unique_tools = len(set(recent_tools))
             if unique_tools <= self.stagnation_unique_tools:
-                tool_names = ", ".join(sorted(set(recent_tools)))
-                return RuleResult.block(
+                # Refinement: if every call touches a DIFFERENT path/arg,
+                # this isn't stagnation - it's legitimate batch work
+                # (e.g., scaffolding 10 files with write() + ls).
+                recent_calls = list(self._call_history) + [call]
+                window_calls = recent_calls[-self.stagnation_threshold:]
+                unique_paths: set[str] = set()
+                for c in window_calls:
+                    args = c.args if isinstance(c.args, dict) else {}
+                    identity = (
+                        args.get("path")
+                        or args.get("file_path")
+                        or args.get("cwd")
+                        or (next(iter(args.values()), "") if args else "")
+                    )
+                    if identity:
+                        unique_paths.add(str(identity))
+                # If >= 70% of calls touch distinct paths, allow - batch work
+                distinct_ratio = len(unique_paths) / max(len(window_calls), 1)
+                if distinct_ratio < 0.7:
+                    tool_names = ", ".join(sorted(set(recent_tools)))
+                    return RuleResult.block(
                     call.tool,
-                    nudge=(
-                        f"You're stuck in a loop cycling between "
-                        f"[{tool_names}] with no progress. "
-                        f"Step back, review what you've done, and try a "
-                        f"completely different approach."
-                    ),
-                    reason=(
-                        f"stagnation: {len(recent_tools)} calls with only "
-                        f"{unique_tools} unique tools [{tool_names}]"
-                    ),
-                )
+                        nudge=(
+                            f"You're stuck in a loop cycling between "
+                            f"[{tool_names}] with no progress. "
+                            f"Step back, review what you've done, and try a "
+                            f"completely different approach."
+                        ),
+                        reason=(
+                            f"stagnation: {len(recent_tools)} calls with only "
+                            f"{unique_tools} unique tools [{tool_names}] "
+                            f"(distinct paths: {len(unique_paths)}/{len(window_calls)})"
+                        ),
+                    )
 
         return RuleResult.allow(call.tool)
 
@@ -139,6 +161,7 @@ class LoopDetectionRule:
         for call in calls:
             self._history.append(_call_fingerprint(call))
             self._tool_history.append(_normalize_tool(call.tool))
+            self._call_history.append(call)
 
     def reset(self) -> None:
         """Clear loop detection history.
