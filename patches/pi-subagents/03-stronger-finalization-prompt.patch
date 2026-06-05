@@ -1,0 +1,13 @@
+--- a/src/runs/shared/acceptance-finalization.ts
++++ b/src/runs/shared/acceptance-finalization.ts
+@@ -73,7 +73,9 @@
+ 	}
+ 	lines.push(
+ 		"",
+-		"Now do the self-check. If work was missing and you repaired it, report the repaired final state. Finish with exactly one fenced JSON block tagged `acceptance-report`.",
++		"## FINAL OUTPUT REQUIREMENT — read carefully",
++		"End this response with EXACTLY ONE fenced JSON block tagged `acceptance-report` (lowercase, hyphenated). The block must contain valid JSON. Do not use `\\`\\`\\`json`, do not write prose instead, and do not stop without emitting the block.",
++		"",
+ 		"```acceptance-report",
+ 		JSON.stringify({
+ 			criteriaSatisfied: [{ id: "criterion-1", status: "satisfied", evidence: "specific proof from the final state" }],

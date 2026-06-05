@@ -1,0 +1,29 @@
+--- a/src/runs/shared/acceptance-contract.ts
++++ b/src/runs/shared/acceptance-contract.ts
+@@ -297,7 +297,10 @@
+ 	}
+ 	lines.push(
+ 		"",
+-		"Finish with a fenced JSON block tagged `acceptance-report` in this shape:",
++		"## FINAL OUTPUT REQUIREMENT — read carefully",
++		"Your response MUST end with a fenced JSON block. The fence tag MUST be exactly `acceptance-report` (lowercase, hyphenated). The JSON inside must be valid (parseable, balanced braces, quoted keys, no trailing commas).",
++		"",
++		"CORRECT format:",
+ 		"```acceptance-report",
+ 		JSON.stringify({
+ 			criteriaSatisfied: [{ id: "criterion-1", status: "satisfied", evidence: "specific proof" }],
+@@ -313,6 +316,14 @@
+ 			notes: "anything else the parent should know",
+ 		}, null, 2),
+ 		"```",
++		"",
++		"WRONG — these will be rejected:",
++		"- Using `\\`\\`\\`json` as the fence tag (use `acceptance-report` instead).",
++		"- Writing prose like 'Changed files: a, b, c' without emitting JSON.",
++		"- Emitting JSON with unquoted keys, trailing commas, or unbalanced braces.",
++		"- Saying 'Let me now write the acceptance report...' and then stopping without the JSON block.",
++		"",
++		"If you have already described the evidence in prose above, COPY it into the matching JSON field. Do not skip the JSON block. Do not emit it twice.",
+ 	);
+ 	return lines.join("\n");
+ }
