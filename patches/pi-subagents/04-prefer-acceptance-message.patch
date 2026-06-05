@@ -1,0 +1,37 @@
+--- a/src/shared/utils.ts
++++ b/src/shared/utils.ts
+@@ -183,9 +183,33 @@
+ // ============================================================================
+ 
+ /**
+- * Get the final text output from a list of messages
++ * Get the final text output from a list of messages.
++ *
++ * Tries strategies in order:
++ *   1. The last assistant message containing an `acceptance-report` fenced
++ *      block or an `ACCEPTANCE_REPORT:` marker. Models sometimes emit the
++ *      report one turn earlier than the last text response, and naive
++ *      "last text" extraction discards the report.
++ *   2. The last assistant message with non-empty text.
++ *
++ * Skips assistant messages flagged as errors.
+  */
+ export function getFinalOutput(messages: Message[]): string {
++	const ACCEPTANCE_PATTERN = /```acceptance-report\b|ACCEPTANCE_REPORT\s*:/i;
++
++	// Strategy 1: last assistant message containing an acceptance-report block.
++	for (let i = messages.length - 1; i >= 0; i--) {
++		const msg = messages[i];
++		if (msg.role !== "assistant") continue;
++		const hasAssistantError = ("errorMessage" in msg && typeof msg.errorMessage === "string" && msg.errorMessage.length > 0)
++			|| ("stopReason" in msg && msg.stopReason === "error");
++		if (hasAssistantError) continue;
++		for (const part of msg.content) {
++			if (part.type === "text" && ACCEPTANCE_PATTERN.test(part.text)) return part.text;
++		}
++	}
++
++	// Strategy 2: last assistant text message (original behavior).
+ 	for (let i = messages.length - 1; i >= 0; i--) {
+ 		const msg = messages[i];
+ 		if (msg.role === "assistant") {
