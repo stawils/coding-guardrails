@@ -1,0 +1,37 @@
+--- a/src/runs/shared/acceptance-reports.ts	2026-06-07 17:29:18.576966632 +0100
++++ b/src/runs/shared/acceptance-reports.ts	2026-06-07 17:26:53.918313305 +0100
+@@ -77,6 +77,19 @@
+ 	return Array.isArray(value) && value.every((item) => typeof item === "string");
+ }
+ 
++/**
++ * Tolerant array check for freeform report fields (validationOutput,
++ * residualRisks, reviewFindings). Models frequently emit arrays of
++ * structured objects (e.g. validationOutput: [{test, result, summary}])
++ * rather than bare string[]. These fields are for human display, so any
++ * array shape is acceptable. (Root cause of F2: the strict isStringArray
++ * check rejected valid object-array reports, causing every otherwise-
++ * correct acceptance report to be discarded.)
++ */
++function isFlexibleArray(value: unknown): value is unknown[] {
++	return Array.isArray(value);
++}
++
+ function isCriterionReport(value: unknown): value is NonNullable<AcceptanceReport["criteriaSatisfied"]>[number] {
+ 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+ 	const criterion = value as { id?: unknown; status?: unknown; evidence?: unknown };
+@@ -112,11 +125,11 @@
+ 	if (report.changedFiles !== undefined && !isStringArray(report.changedFiles)) return false;
+ 	if (report.testsAddedOrUpdated !== undefined && !isStringArray(report.testsAddedOrUpdated)) return false;
+ 	if (report.commandsRun !== undefined && (!Array.isArray(report.commandsRun) || !report.commandsRun.every(isCommandReport))) return false;
+-	if (report.validationOutput !== undefined && !isStringArray(report.validationOutput)) return false;
+-	if (report.residualRisks !== undefined && !isStringArray(report.residualRisks)) return false;
++	if (report.validationOutput !== undefined && !isFlexibleArray(report.validationOutput)) return false;
++	if (report.residualRisks !== undefined && !isFlexibleArray(report.residualRisks)) return false;
+ 	if (report.noStagedFiles !== undefined && typeof report.noStagedFiles !== "boolean") return false;
+ 	if (report.diffSummary !== undefined && typeof report.diffSummary !== "string") return false;
+-	if (report.reviewFindings !== undefined && !isStringArray(report.reviewFindings)) return false;
++	if (report.reviewFindings !== undefined && !isFlexibleArray(report.reviewFindings)) return false;
+ 	if (report.manualNotes !== undefined && typeof report.manualNotes !== "string") return false;
+ 	if (report.notes !== undefined && typeof report.notes !== "string") return false;
+ 	return report.criteriaSatisfied !== undefined
