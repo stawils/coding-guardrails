@@ -143,6 +143,27 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
+    # ── Gemma 4 26B A4B QAT (MoE, 25.23B total / 3.8B active) ──
+    # Quantization-Aware Training: 14.25 GB at Q4 with ~85.6% top-1 vs BF16
+    # (vs 70.2% for naive Q4_0 — QAT lattice needs Unsloth UD-Q4_K_XL).
+    # Native 256K context; runs 200K on 24 GB GPU with q8_0 KV cache.
+    # Measured: 19.75 GB VRAM at 200K ctx (q8_0 KV), 2.8 GB headroom.
+    # No MTP for Gemma 4 (llama.cpp #22747). Sliding-window attn keeps
+    # KV cache tiny: only 5 global layers of 30 hold full sequence.
+    "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL": ModelProfile(
+        name="gemma-4-26B-A4B-it-qat-UD-Q4_K_XL",
+        family="Gemma4",
+        quant="UD-Q4_K_XL (QAT)",
+        file_size_gb=14.25,
+        vram_required_gb=19.8,
+        context_tokens=200000,
+        architecture="moe",
+        active_params_b=3.8,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 64, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1"],
+    ),
     # ── Gemma 4 12B Unified (Dense, encoder-free multimodal, 48 layers) ──
     # 11.95B params, 256K max context, hybrid sliding window (1024) + global attn.
     # Encoder-free: projects image/audio directly into LLM embedding space.

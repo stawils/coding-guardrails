@@ -28,5 +28,10 @@
     "type": "scratch",
     "key": "backlog-state",
     "value": "Synaptic-memory extension review DONE:\n- Critical pruning bug FIXED (sortedAuto.slice now keeps strongest)\n- session_shutdown event verified as valid\n- Extension otherwise clean and spec-compliant\n\nNext task: need to check backlog for remaining items"
+  },
+  {
+    "type": "scratch",
+    "key": "gemma4-26b-qat-download-watcher",
+    "value": "Gemma 4 26B A4B QAT GGUF download COMPLETE (2026-06-07 18:21).\n\n- File: ~/.cache/lm-studio/models/unsloth/gemma-4-26B-A4B-it-qat-GGUF/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf (14 GB)\n- Watcher exited rc=0, PID file removed.\n- Guardrails servers STOPPED at user request (:8080 llama-server + :8081 coding-guardrails). Ports free. GPU: 3.5GB used / 19GB free.\n- Boot cmd for guardrails L1 backend in ~/AI/coding-guardrails/plans/2026-06-07_gemma4-26b-a4b-qat-200k-feasibility.md\n- NOTE: when restarting llama-server, TERM was insufficient (3s), needed KILL. Use kill -KILL or longer wait next time.\n- E4B unrelated project now running litert-torch conversion (PID 277551, ~25GB RAM) — leave alone."
   }
 ]
