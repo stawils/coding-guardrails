@@ -128,6 +128,15 @@ $LLAMA \
   -c 256000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 
+# Gemma 4 26B A4B QAT UD-Q4_K_XL (200K ctx, ~20 GB VRAM, current default)
+#   MoE: 25.2B total / 3.8B active. q8_0 KV cache required for 200K to fit 24 GB.
+#   Use ONLY the Unsloth QAT GGUF — naive Q4_0 loses 15.4pp accuracy.
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/gemma-4-26B-A4B-it-qat-GGUF/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf \
+  -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 \
+  --temp 1.0 --top-p 0.95 --top-k 64 -np 1 -v
+
 # Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate
 coding-guardrails serve \
@@ -147,6 +156,7 @@ coding-guardrails serve \
 - `~/llama.cpp/llama-server` is older (build 8276) and fails on Qwen3.6-27B models (missing `ssm_conv1d` tensors).
 - Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
+- **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - `recommended_sampling=False` — model not in Forge's registry
 - any md file writing should be in gitignored plans/ folder.
