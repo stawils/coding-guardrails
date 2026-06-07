@@ -1,5 +1,17 @@
 # pi-subagents acceptance patches
 
+> **STATUS (2026-06-07): NOT APPLIED.** These patches are kept on disk as
+> the documented basis for upstream issue
+> [nicobailon/pi-subagents#253](https://github.com/nicobailon/pi-subagents/issues/253)
+> only. They are **no longer applied** to the installed pi-subagents — the
+> running pi uses the **pristine v0.28.0 tarball** (verified byte-identical).
+> Reliability is instead handled at the orchestration layer: delegations run
+> without `acceptance` contracts, and verification (build/test) is run
+> directly by the orchestrator. Do **not** re-apply these patches without an
+> explicit decision; that would reintroduce local modifications to pi's
+> source. `apply-patches.sh --check` will report all 5 as "NEEDS APPLY" —
+> that is the expected/desired state.
+
 Fixes for upstream pi-subagents 0.28.0 that cause valid acceptance reports
 to be silently rejected. Discovered during the 2026-06-05 Lirada build
 session where ~60% of subagent runs failed acceptance despite the model
