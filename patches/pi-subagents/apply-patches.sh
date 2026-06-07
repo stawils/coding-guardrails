@@ -58,6 +58,7 @@ PATCHES=(
   "$SCRIPT_DIR/02-stronger-acceptance-prompt.patch"
   "$SCRIPT_DIR/03-stronger-finalization-prompt.patch"
   "$SCRIPT_DIR/04-prefer-acceptance-message.patch"
+  "$SCRIPT_DIR/05-acceptance-schema-tolerance.patch"
 )
 
 applied=0

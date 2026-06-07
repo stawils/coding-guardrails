@@ -1,7 +1,32 @@
 [
   {
     "type": "scratch",
-    "key": "loop-detection-tests-summary",
-    "value": "## Loop Detection Session Reset Tests Summary\n\nCreated: /home/tsuser/AI/coding-guardrails/tests/unit/test_loop_session_reset.py\n\n### Test Results\n- **New tests created**: 6 tests across 3 classes\n- **Total passing loop tests**: 13 (7 existing + 6 new)\n\n### Test Coverage\n\n#### TestResetClearsHistory (3 tests)\n1. `test_reset_clears_exact_match` - Records 4 identical calls (would BLOCK on 5th), reset(), then verifies next check is ALLOW\n2. `test_reset_clears_stagnation` - Records 14+ calls cycling 2 tools (triggers stagnation BLOCK), reset(), then verifies next check is ALLOW\n3. `test_reset_clears_tool_history` - Records multiple tool calls, reset(), verifies first call after reset is ALLOW\n\n#### TestSessionDetection (2 tests)\n1. `test_no_assistant_means_new` - Messages with only system+user roles → no assistant detected\n2. `test_assistant_means_existing` - Messages with assistant role → session exists\n\n#### TestResetPreservesThresholds (1 test)\n1. `test_reset_keeps_thresholds` - Custom window/nudge/block thresholds remain unchanged after reset\n\n### Pre-existing Test Issues\n10 tests in `test_text_passthrough.py` fail due to missing pytest-asyncio plugin, but these failures:\n- Are unrelated to loop detection\n- Existed before this change (pre-existing issue)\n- Do not affect the 233+ test suite target (249 total tests, 239 passing)\n\n### Verification\nAll loop detection tests pass:\n- `pytest tests/unit/test_loop_detection.py tests/unit/test_loop_session_reset.py -v`\n- Result: 13 passed, 0 failed"
+    "key": "pi-bash-prefix",
+    "value": "In pi TUI sessions, prefix bash commands with ! instead of exiting pi. E.g., !ls, !pwd, !kill. No need to exit/restart pi for shell commands."
+  },
+  {
+    "type": "scratch",
+    "key": "tmux-copy-mode",
+    "value": "Tmux gotcha: sending C-c multiple times rapidly triggers tmux copy mode (pink bar \"jump forward\"). Fix: send Escape or q to exit copy mode. Always add sleep between C-c sends."
+  },
+  {
+    "type": "scratch",
+    "key": "autopilot-never-stop",
+    "value": "RULE: When running autonomous loop (autopilot mode), NEVER stop. Keep picking tasks from the backlog and executing them until the backlog is empty. Do NOT ask the user if you should continue. Just keep going. When the backlog is empty, find new work to do (scan for TODOs, improve docs, find bugs, etc)."
+  },
+  {
+    "type": "scratch",
+    "key": "extension-idea",
+    "value": "SYNAPTIC MEMORY — A Pi extension that gives the agent persistent, intelligent, evolving memory across all sessions.\n\nThe #1 gap in AI coding tools: every session starts from zero. This extension closes that gap.\n\nCore concept:\n- WATCHES every tool call, decision, outcome across sessions\n- EXTRACTS knowledge: patterns, preferences, project conventions, failed approaches, successful strategies\n- STORES in a local semantic graph (not just key-value)\n- RECALLS relevant context on session start, injected into system prompt\n- LEARNS what's useful by tracking which memories get referenced\n- DECAYS old/unused memories automatically\n\nThis makes the agent genuinely smarter over time. It's not just a scratch pad — it's an evolving knowledge layer.\n\nKey differentiators from scratch-pad:\n1. Automatic extraction (no manual saving)\n2. Semantic association (related memories linked)\n3. Relevance scoring (what mattered in similar contexts before)\n4. Decay/growth (useful memories strengthen, unused ones fade)\n5. Cross-project learning (patterns from one project help another)\n\nTools: recall (LLM searches memory), remember (LLM explicitly stores), forget (LLM removes)\nCommands: /memory (browse), /memory-stats (see graph health), /memory-export (backup)\n"
+  },
+  {
+    "type": "scratch",
+    "key": "synaptic-memory-state",
+    "value": "index.ts written at ~/.pi/agent/extensions/synaptic-memory/index.ts (~500 lines). Needs review by local model. Spec at ~/AI/coding-guardrails/plans/2026-06-03_synaptic-memory-extension.md. Review prompt and context saved to ~/workspaces/.ai-vibe-coder/plans/synaptic-memory-review-context.md. Backlog updated."
+  },
+  {
+    "type": "scratch",
+    "key": "backlog-state",
+    "value": "Synaptic-memory extension review DONE:\n- Critical pruning bug FIXED (sortedAuto.slice now keeps strongest)\n- session_shutdown event verified as valid\n- Extension otherwise clean and spec-compliant\n\nNext task: need to check backlog for remaining items"
   }
 ]
