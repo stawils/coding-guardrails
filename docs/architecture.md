@@ -25,7 +25,7 @@ coding-guardrails proxy (:8081)
   │   ├── Normalize max_completion_tokens → max_tokens
   │   └── Default 8192 token cap if none specified
   │
-  ├── Layer 2: Coding Guardrails (10 rules)
+  ├── Layer 2: Coding Guardrails (11 rules)
   │   ├── path_safety      — block /etc/, /proc/, path traversal
   │   ├── command_safety   — block sudo, eval/curl, git destructive ops
   │   ├── network          — block file uploads, SSRF, metadata endpoints
@@ -35,6 +35,7 @@ coding-guardrails proxy (:8081)
   │   ├── loop_detection   — detect and break stuck agent loops
   │   ├── session_budget   — cap file ops and commands per session
   │   ├── sequencing       — suggest running tests after changes
+  │   ├── thoroughness     — detect premature terminal submission
   │   └── tool_resolution  — warn on empty/error tool results
   │
   ▼
@@ -67,7 +68,7 @@ Our `SafeLlamafileClient` extends Forge's client without modifying Forge itself:
 
 ## Layer 2: Coding Guardrails (Safety)
 
-10 composable rules:
+11 composable rules:
 
 - **Hard blocks** — Immediately prevent dangerous actions (path traversal,
   destructive commands, secret exfiltration, network uploads)
@@ -128,8 +129,9 @@ Rules can be:
 | `proxy/server.py` | Asyncio HTTP server, routing, SSE streaming |
 | `proxy/handler.py` | Layer 1 → Layer 2 pipeline, structured logging |
 | `proxy/client.py` | SafeLlamafileClient (max_tokens forwarding) |
+| `server/` | `cg server` — build, download, start/stop, version |
 | `middleware.py` | Rule composition, `check()` / `record()` API |
-| `rules/*.py` | 10 individual rule implementations |
+| `rules/*.py` | 11 individual rule implementations |
 | `config.py` | YAML config loading with env var expansion |
 | `models/profiles.py` | Model hardware and sampling characteristics |
 | `eval.py` | Eval scenario runner |

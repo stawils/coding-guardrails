@@ -28,7 +28,7 @@ Set `api_base` to the proxy URL:
 
 ```yaml
 # In Pi's config
-model: "Qwen3.6-35B-A3B-UD-Q3_K_M"
+model: "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL"
 api_base: "http://localhost:8081/v1"
 ```
 
@@ -37,7 +37,7 @@ api_base: "http://localhost:8081/v1"
 ```bash
 export OPENAI_API_BASE=http://localhost:8081/v1
 export OPENAI_API_KEY=not-needed
-aider --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M
+aider --model openai/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
 ```
 
 ## Continue (VS Code)
@@ -49,7 +49,7 @@ In `~/.continue/config.json`:
   "models": [{
     "title": "coding-guardrails",
     "provider": "openai",
-    "model": "Qwen3.6-35B-A3B-UD-Q3_K_M",
+    "model": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL",
     "apiBase": "http://localhost:8081/v1",
     "apiKey": "not-needed"
   }]
@@ -60,7 +60,7 @@ In `~/.continue/config.json`:
 
 In VS Code settings, set:
 - API Base: `http://localhost:8081/v1`
-- Model: `Qwen3.6-35B-A3B-UD-Q3_K_M`
+- Model: `gemma-4-26B-A4B-it-qat-UD-Q4_K_XL`
 - API Key: any non-empty string
 
 ## Claude Code (Anthropic CLI)
@@ -73,7 +73,7 @@ export OPENAI_API_KEY=not-needed
 export OPENAI_BASE_URL=http://localhost:8081/v1
 
 # Run Claude Code with the custom provider
-claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M
+claude --model openai/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
 ```
 
 Or in your project's `.claude/settings.json`:
@@ -87,7 +87,7 @@ Or in your project's `.claude/settings.json`:
 }
 ```
 
-Then use `claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M`.
+Then use `claude --model openai/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL`.
 
 ## OpenCode (Terminal AI)
 
@@ -107,7 +107,7 @@ Edit `~/.config/opencode/opencode.json`:
       },
       "models": {
         "qwen": {
-          "name": "Qwen3.6-35B-A3B-UD-Q3_K_M",
+          "name": "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL",
           "_launch": true
         }
       }

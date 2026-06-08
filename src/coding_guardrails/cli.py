@@ -24,7 +24,7 @@ def main() -> None:
 
 @main.command()
 @click.option("--backend-url", required=True, help="URL of the llama-server backend (e.g. http://localhost:8080)")
-@click.option("--model", required=True, help="Model name for sampling defaults (e.g. Qwen3.6-35B-A3B-UD-Q3_K_M)")
+@click.option("--model", required=True, help="Model name for sampling defaults (e.g. gemma-4-26B-A4B-it-qat-UD-Q4_K_XL)")
 @click.option("--port", default=8081, type=int, help="Proxy listen port (default: 8081)")
 @click.option("--host", default="127.0.0.1", help="Proxy listen host")
 @click.option("--config", "config_path", help="Path to guardrail-config.yaml")
