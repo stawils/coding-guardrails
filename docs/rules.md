@@ -1,6 +1,6 @@
 # Rules Reference
 
-coding-guardrails ships with 10 guardrail rules, each independently configurable.
+coding-guardrails ships with 11 guardrail rules, each independently configurable.
 
 ## Rule Behavior
 
@@ -144,6 +144,8 @@ coding-guardrails ships with 10 guardrail rules, each independently configurable
 ## 7. Loop Detection (`loop_detection`)
 
 **What it does:** Detects when an agent is stuck repeating the same operation.
+Tracks unique tool+path combinations, not just tool names — so `bash("pytest src/")`
+and `bash("pytest tests/")` are counted separately.
 
 **Default:** Nudge at 3x, block at 5x.
 
@@ -178,7 +180,27 @@ coding-guardrails ships with 10 guardrail rules, each independently configurable
 
 ---
 
-## 9. Sequencing (`sequencing`)
+## 9. Thoroughness (`thoroughness`)
+
+**What it does:** Detects premature terminal submission — when the model calls a
+submission/report tool after exploring only a small fraction of available tools.
+
+**Default:** Soft nudge.
+
+**Terminal patterns:** `submit`, `report`, `respond`, `answer`, `present`, `summarize`, `diagnose`, `recommend`, `complete`.
+
+**Common failure modes addressed:**
+- Submitting reports with unresolved placeholder values
+- Flagging items without investigating aliases/edge cases
+- Returning partial answers when more data was available
+
+**Examples:**
+- ⚠️ Calls `submit()` after using 2 of 8 available tools → nudge: "consider exploring more tools"
+- ✅ Calls `submit()` after using 7 of 8 available tools → allowed
+
+---
+
+## 10. Sequencing (`sequencing`)
 
 **What it does:** Suggests running tests after code changes.
 
@@ -193,7 +215,7 @@ coding-guardrails ships with 10 guardrail rules, each independently configurable
 
 ---
 
-## 10. Tool Resolution (`tool_resolution`)
+## 11. Tool Resolution (`tool_resolution`)
 
 **What it does:** Warns when tool results are empty or contain errors.
 

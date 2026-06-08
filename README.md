@@ -76,9 +76,10 @@ Optimized for consumer GPUs (24 GB VRAM) with llama-server:
 
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
-| **Qwen3.6-27B** ⭐ | 22 GB | **32K** | ~28 tok/s | Dense, MTP, best coding quality |
+| **Gemma 4 26B-A4B QAT** ⭐ | 20 GB | **200K** | ~40+ tok/s | MoE, vision, highest capability |
 | **Qwen3.5-9B** | 18 GB | **200K** | ~53 tok/s | Dense, MTP, fastest |
-| **Gemma 4 26B-A4B** | 21 GB | **200K** | ~50 tok/s | MoE, vision, Google |
+| **Gemma 4 12B** | 8 GB | **256K** | ~45 tok/s | Dense, multimodal, encoder-free |
+| **Qwen3.6-27B** | 22 GB | **32K** | ~28 tok/s | Dense, MTP, best coding quality |
 | Qwen3.6-35B-A3B | 22 GB | 16K | ~22 tok/s | Legacy |
 
 Works with any OpenAI-compatible backend. See [docs/models.md](docs/models.md).
@@ -239,7 +240,7 @@ cd coding-guardrails
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-# Run tests (233 tests)
+# Run tests (421 tests)
 pytest tests/unit/ -q
 
 # Run against live backend

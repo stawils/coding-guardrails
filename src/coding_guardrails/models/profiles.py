@@ -233,5 +233,5 @@ def get_profile(model_name: str) -> ModelProfile | None:
 def list_profiles() -> list[ModelProfile]:
     """Return all profiles with recommended first."""
     # Recommended order: Qwen3.6-27B UD-Q4_K_XL MTP first (best coding + speed)
-    order = {"Qwen3.6-27B-UD-Q4_K_XL": 0}
+    order = {"gemma-4-26B-A4B-it-qat-UD-Q4_K_XL": 0}
     return sorted(PROFILES.values(), key=lambda p: (order.get(p.name, 1), p.vram_required_gb))
