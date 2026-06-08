@@ -118,7 +118,15 @@ async def _run_proxy(
         base_url=base,
         mode="native",
         timeout=timeout,
-        default_max_tokens=8192,
+        # Output cap for the backend. Must be large enough for the model to
+        # emit a complete tool call (e.g. a full file in a `write` args JSON-
+        # wrapped) WITHOUT mid-stream truncation. 8192 was too small for
+        # verbose models (Gemma 4 26B) writing multi-KB files: the truncated
+        # JSON args failed validation, the agent retried, and the same cap
+        # truncated it again — an infinite loop. 16384 fits typical file
+        # writes + JSON overhead and matches pi's maxTokens for these models.
+        # pi can still override per-request; this is only the default.
+        default_max_tokens=16384,
     )
 
     # Auto-detect context budget from backend
@@ -245,6 +253,10 @@ def list_models() -> None:
 # Import and register the eval command
 from coding_guardrails.eval import eval_cmd
 main.add_command(eval_cmd, "eval")
+
+# Register the server command group (cg-owned llama.cpp lifecycle)
+from coding_guardrails.server.cli import server_cmd
+main.add_command(server_cmd)
 
 
 if __name__ == "__main__":
