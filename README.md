@@ -23,20 +23,26 @@ One command to go from "I have a GPU" to "I have a safe local coding agent backe
 # Install
 pip install coding-guardrails
 
-# Start llama-server (your local LLM backend)
-llama-server -m Qwen3.5-9B-UD-Q4_K_XL.gguf --jinja --flash-attn auto \
-  --port 8080 -c 200000 --spec-type draft-mtp -np 1 -n 8192
+# Build cg's own llama-server (pinned commit; includes the Gemma 4 tool-call fix)
+coding-guardrails server build
 
-# Start the proxy
+# Download a model, then start the LLM backend (cg-owned, on :8080)
+coding-guardrails server download gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
+coding-guardrails server start --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
+
+# Start the proxy (guardrails + Forge rescue, on :8081)
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
-  --model Qwen3.5-9B-UD-Q4_K_XL \
+  --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL \
   --port 8081
 
 # Point your agent at http://localhost:8081/v1
 ```
 
 That's it. Your agent sees a standard OpenAI-compatible API.
+
+> **Already running your own llama-server?** Skip `server build/start` and point
+> `--backend-url` at it. See [docs/server.md](docs/server.md).
 
 ## What It Does
 

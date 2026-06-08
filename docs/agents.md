@@ -6,18 +6,21 @@ Just point the agent at the proxy instead of directly at llama-server.
 ## Quick Start
 
 ```bash
-# Terminal 1: Start llama-server
-llama-server -m model.gguf --jinja --fit on --flash-attn auto \
-  --port 8080 -c 16384 --spec-type draft-mtp -np 1
+# Terminal 1: Build + start cg's own llama-server (one-time build)
+coding-guardrails server build
+coding-guardrails server start --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
 
 # Terminal 2: Start proxy
 coding-guardrails serve \
   --backend-url http://localhost:8080 \
-  --model Qwen3.6-35B-A3B-UD-Q3_K_M \
+  --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL \
   --port 8081
 
 # Terminal 3: Start your agent pointing at :8081
 ```
+
+See [server.md](server.md) for managing the cg-owned server (build, download,
+start/stop, version).
 
 ## Pi
 
