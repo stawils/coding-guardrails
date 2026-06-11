@@ -164,6 +164,30 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--flash-attn", "auto",
                      "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1"],
     ),
+    # ── LFM2.5-8B-A1B (Liquid AI, MoE, 18 hybrid conv + 6 GQA) ──
+    # Liquid Neural Network hybrid: 24 layers (18 double-gated LIV conv + 6 GQA).
+    # Only 6 attention layers need KV cache — very memory efficient.
+    # 32 experts, 4 active per token. 128K native context.
+    # Designed for edge/on-device agentic workflows and tool calling.
+    # 38T token pretraining + RL. Not best for heavy programming.
+    # Uses ChatML template with custom <|tool_call_*|> tokens.
+    # Sampling recommended by Liquid: temp=0.2, top_k=80, rep_penalty=1.05
+    #
+    # VRAM at Q4_K_M, 128K ctx, fp16 KV: 4.7 + 1.6 + 0.2 + 1.5 = ~8.0 GB
+    #   → massive headroom on 24 GB GPU; q8_0 KV optional (~7.2 GB)
+    "LFM2.5-8B-A1B-Q4_K_M": ModelProfile(
+        name="LFM2.5-8B-A1B-Q4_K_M",
+        family="LFM2.5",
+        quant="Q4_K_M",
+        file_size_gb=4.8,
+        vram_required_gb=8.0,
+        context_tokens=128000,
+        architecture="moe",
+        active_params_b=1.5,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.7, "top_k": 40, "top_p": 0.9},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
     # ── Gemma 4 12B Unified (Dense, encoder-free multimodal, 48 layers) ──
     # 11.95B params, 256K max context, hybrid sliding window (1024) + global attn.
     # Encoder-free: projects image/audio directly into LLM embedding space.
