@@ -68,7 +68,6 @@ llama-server \
 > **q8_0 KV cache is required** for 200K to fit 24 GB (~20 GB used, 2.8 GB headroom).
 > Use the **Unsloth UD-Q4_K_XL QAT** GGUF only — naive Q4_0 conversion loses
 > 15.4pp top-1 accuracy (QAT lattice needs Unsloth's dynamic method).
-> Requires llama.cpp **b9596+** (built with CUDA 12.8 at `~/llama.cpp/build/bin/`).
 
 ### Qwen3.5-9B (200K context + MTP)
 
@@ -79,24 +78,6 @@ llama-server \
   --port 8080 -c 200000 \
   --spec-type draft-mtp -np 1
 ```
-
-### LFM2.5-8B-A1B (128K context, 1.5B active) 🆕
-
-```bash
-~/llama.cpp/build/bin/llama-server \
-  -m LFM2.5-8B-A1B-Q4_K_M.gguf \
-  --jinja --flash-attn auto \
-  --port 8080 -c 128000 -np 1
-```
-
-> **Architecture:** 24 layers (18 double-gated LIV conv + 6 GQA GQA-attention).
-> Only 6 attention layers need KV cache — extremely efficient. 32 experts, 4 active.
-> **Edge model:** 8.3B total / 1.5B active params. Faster than any other profile.
-> **Sampling:** Liquid recommends temp=0.2, top_k=80, rep_penalty=1.05 for general use.
-> **Tool use:** ChatML format with `<|tool_call_start|>` / `<|tool_call_end|>` tokens.
-> **Note:** Not optimized for heavy programming — best for agentic/tool-use tasks.
-> **Requires llama.cpp build with lfm2moe support** — use `~/llama.cpp/build/bin/llama-server`
-> (LM Studio 2.18.0's bundled llama-server does NOT support this architecture).
 
 ### Gemma 4 12B Unified (256K context) 🆕
 
@@ -120,21 +101,6 @@ llama-server \
   --port 8080 -c 200000 -np 1
 ```
 
-### LFM2.5-8B-A1B (128K context, 1.5B active) 🆕
-
-```bash
-~/llama.cpp/build/bin/llama-server \
-  -m LFM2.5-8B-A1B-Q4_K_M.gguf \
-  --jinja --flash-attn auto \
-  --port 8080 -c 128000 -np 1
-```
-
-> **Note:** Requires `~/llama.cpp/build/bin/llama-server` (build **b9596+**) — lfm2moe support.
-> LM Studio's bundled llama-server does NOT support this architecture.
-> Only 6 of 24 layers are GQA attention; the rest are efficient LIV conv layers.
-> Sampling recommendation: temp=0.2, top_k=80, repetition_penalty=1.05 (per Liquid AI).
-> Critical fixes: tool parser (#24178), JSON schema (#24377), tokenizer (#23826).
-
 ### Qwen3.6-35B-A3B (32K context + MTP, legacy)
 
 ```bash
@@ -155,9 +121,8 @@ llama-server \
 ## All Profiles
 
 | Model | Quant | Size | VRAM | Context | Arch | Notes |
-|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|
 | **Gemma 4 26B A4B QAT** ⭐ | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | 200K | MoE | Highest capability; q8_0 KV |
-| **LFM2.5-8B-A1B** 🆕 | Q4_K_M | 4.7 GB | 8.0 GB | 128K | MoE | Fastest; edge agentic; 1.5B active |
 | **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | 200K | Dense | Fastest, proven tool-use |
 | **Qwen3.6-27B** | UD-Q4_K_XL (MTP) | 17.0 GB | 22.4 GB | 32K | Dense | Best dense quality |
 | Qwen3.6-27B | UD-Q3_K_XL (MTP) | 14.5 GB | 22.5 GB | 82K | Dense | Max context |
