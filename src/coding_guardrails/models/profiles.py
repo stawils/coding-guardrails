@@ -81,5 +81,6 @@ def get_profile(model_name: str) -> ModelProfile | None:
 
 
 def list_profiles() -> list[ModelProfile]:
-    """Return all profiles with recommended first."""
-    return sorted(PROFILES.values(), key=lambda p: p.vram_required_gb)
+    """Return all profiles with Qwen (default) first."""
+    order = {"Qwen3.5-9B-UD-Q4_K_XL": 0, "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL": 1}
+    return sorted(PROFILES.values(), key=lambda p: (order.get(p.name, 99), p.vram_required_gb))
