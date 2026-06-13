@@ -32,6 +32,7 @@ from forge.proxy.convert import (
 from forge.tools.respond import RESPOND_TOOL_NAME, respond_spec
 
 from coding_guardrails.middleware import CodingGuardrails
+from coding_guardrails.proxy.acceptance import wrap_bare_acceptance_report
 from coding_guardrails.rules.base import ToolCall as GuardrailToolCall
 
 logger = logging.getLogger("coding_guardrails.proxy")
@@ -288,6 +289,7 @@ async def handle_chat_completions(
     except ToolCallError as exc:
         raw = exc.raw_response or ""
         logger.warning("Layer 1 failed after %d retries (%s)", max_retries, _short(raw, 80))
+        raw = wrap_bare_acceptance_report(raw)
         if is_stream:
             return text_to_sse_events(raw, model=model_name)
         return text_response_to_openai(raw, model=model_name)
@@ -305,7 +307,7 @@ async def handle_chat_completions(
 
     # If the model returned text (not tool calls), pass it through to the agent.
     if isinstance(response, TextResponse):
-        text = response.content
+        text = wrap_bare_acceptance_report(response.content)
         logger.info("Model responded with text (%d chars, %s, %d attempt%s)",
                     len(text), _fmt_elapsed(elapsed_l1),
                     attempts, "s" if attempts != 1 else "")

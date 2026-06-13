@@ -91,3 +91,39 @@ def test_does_not_mutate_input() -> None:
 
 def test_empty_messages_is_safe() -> None:
     assert _client()._inject_acceptance_prefill([]) == []
+
+
+def test_prefill_seeds_contract_criterion_id() -> None:
+    """When the nudge lists a real criterion id ('Criteria:\n- comment: ...'),
+    the prefill must seed THAT id so the model's report matches the contract
+    (otherwise Pi rejects with 'Required criterion <id> was not reported')."""
+    c = _client()
+    msgs = [
+        {"role": "user", "content": f"## {MARKER}\n## Acceptance Contract\nCriteria:\n- comment: src has the marker"},
+    ]
+    out = c._inject_acceptance_prefill(msgs)
+    assert out[-1]["role"] == "assistant"
+    assert out[-1]["content"] == '{"criteriaSatisfied": [{"id": "comment", "status": "'
+
+
+def test_prefill_falls_back_when_no_criterion_id() -> None:
+    """Nudges without a 'Criteria:'/'- <id>:' section fall back to the generic
+    prefill (backward-compatible with the older detection tests)."""
+    c = _client()
+    msgs = [{"role": "user", "content": f"## {MARKER}\nEmit the report."}]
+    out = c._inject_acceptance_prefill(msgs)
+    assert out[-1]["content"] == '{"criteriaSatisfied": [{"id": "'
+
+
+def test_prefill_ignores_example_block_criterion_id() -> None:
+    """The nudge's fenced EXAMPLE uses a generic 'criterion-1' JSON id; the
+    resolver must pick the real markdown-listed id, not the example's."""
+    c = _client()
+    nudge = (
+        f"## {MARKER}\n"
+        "## Acceptance Contract\nCriteria:\n- all-tests: cargo test passes\n"
+        "```acceptance-report\n{\"criteriaSatisfied\": [{\"id\": \"criterion-1\"}]}\n```"
+    )
+    out = c._inject_acceptance_prefill([{"role": "user", "content": nudge}])
+    assert '"id": "all-tests"' in out[-1]["content"]
+    assert "criterion-1" not in out[-1]["content"]

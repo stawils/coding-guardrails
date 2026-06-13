@@ -59,6 +59,30 @@ class SafeLlamafileClient(LlamafileClient):
     _ACCEPTANCE_MARKER = "Acceptance Finalization"
     _ACCEPTANCE_PREFILL = '{"criteriaSatisfied": [{"id": "'
 
+    def _resolve_acceptance_prefill(self, user_texts: list[str]) -> str:
+        """Pick a prefill that seeds the contract's first criterion id.
+
+        The finalization nudge's *example* block uses a generic 'criterion-1'
+        id, which the model copies verbatim into its report. Pi then rejects
+        with 'Required criterion <id> was not reported' because the model's
+        id never matches the contract's id. The contract criteria are listed
+        in the nudge as markdown 'Criteria:\n- <id>: <must>'; seeding that id
+        makes the model's criteriaSatisfied entry line up with the contract.
+
+        Seeds only the id label; the model still generates status and
+        evidence itself (no result fabrication). Falls back to the generic
+        prefill when no criterion id can be parsed.
+        """
+        import re
+        for text in user_texts:
+            crit_idx = text.find("Criteria:")
+            if crit_idx < 0:
+                continue
+            m = re.search(r"(?m)^[ \t]*-[ \t]+([A-Za-z0-9][A-Za-z0-9_-]*)[ \t]*:", text[crit_idx:])
+            if m:
+                return '{"criteriaSatisfied": [{"id": "%s", "status": "' % m.group(1)
+        return self._ACCEPTANCE_PREFILL
+
     def _inject_acceptance_prefill(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
         """If the conversation contains an acceptance-finalization prompt AND
         the trailing turn is the model's chance to respond, append a JSON
@@ -104,7 +128,8 @@ class SafeLlamafileClient(LlamafileClient):
         if isinstance(last, dict) and last.get("role") == "assistant":
             return messages
         result = list(messages)
-        result.append({"role": "assistant", "content": self._ACCEPTANCE_PREFILL})
+        prefill = self._resolve_acceptance_prefill(user_texts)
+        result.append({"role": "assistant", "content": prefill})
         logging.getLogger("coding_guardrails.client").info(
             "acceptance-finalization prefill injected (msgs=%d, last_role=%s)",
             len(messages), last.get("role") if isinstance(last, dict) else "?",
