@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 421 tests, ~2s
+pytest tests/unit/ -q          # 436 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -29,6 +29,7 @@ Agent → :8081 (our proxy)
 4. **Layer 1 (Forge)**: run inference with rescue + retry + thinking capture
 5. **Layer 2 (Guardrails)**: check tool calls against 11 rules
 6. **Response**: blocked calls return text nudge to agent; allowed calls pass through
+7. **Acceptance shaping**: if the model emits an acceptance-report as bare JSON (the F9 prefill makes it emit JSON, but local models drop the fence), the text response is wrapped in the ` ```acceptance-report ` fence Pi's runtime requires; the contract's real criterion id is seeded into the prefill so reports match contracts
 
 ### Key Modules
 
@@ -36,7 +37,8 @@ Agent → :8081 (our proxy)
 |------|---------|
 | `proxy/handler.py` | Request pipeline: preprocessing → L1 → L2 → response |
 | `proxy/layer1.py` | Instrumented Forge wrapper with thinking capture |
-| `proxy/client.py` | `SafeLlamafileClient` — thinking tokens, max_tokens |
+| `proxy/client.py` | `SafeLlamafileClient` — thinking tokens, max_tokens, acceptance prefill |
+| `proxy/acceptance.py` | Wraps bare acceptance-report JSON in the fenced block Pi's runtime parses |
 | `proxy/server.py` | Asyncio HTTP server, `/v1/chat/completions` |
 | `middleware.py` | Composes all rules, `check()` / `record()` API |
 | `cli.py` | `coding-guardrails serve` CLI |
@@ -165,11 +167,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 421 tests
+pytest tests/unit/ -q              # All 436 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 421 tests must pass before committing.
+All 436 tests must pass before committing.
 
 ## Eval
 
@@ -194,7 +196,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 385 unit tests must pass
+- All 436 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -225,7 +227,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 421 tests MUST pass
+pytest tests/unit/ -q          # All 436 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.
