@@ -3,10 +3,10 @@
 #
 # Usage:
 #   1. Start llama-server: llama-server -m <model>.gguf --jinja --fit on --flash-attn auto --port 8080 -c 16384 --spec-type draft-mtp -np 1
-#   2. Start proxy:        coding-guardrails serve --backend-url http://localhost:8080 --model Qwen3.6-35B-A3B-UD-Q3_K_M --port 8081
+#   2. Start proxy:        coding-guardrails serve --backend-url http://localhost:8080 --model Qwen3.5-9B-UD-Q4_K_XL --port 8081
 #   3. Set in Pi config:   api_base = "http://localhost:8081/v1"
 
-model: "Qwen3.6-35B-A3B-UD-Q3_K_M"
+model: "Qwen3.5-9B-UD-Q4_K_XL"
 api_base: "http://localhost:8081/v1"
 
 # Pi should see the proxy as a regular OpenAI-compatible backend.

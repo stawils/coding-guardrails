@@ -9,7 +9,7 @@
 # Option 1: Environment variables
 # export OPENAI_API_KEY=not-needed
 # export OPENAI_BASE_URL=http://localhost:8081/v1
-# claude --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M
+# claude --model openai/Qwen3.5-9B-UD-Q4_K_XL
 
 # Option 2: Project settings (.claude/settings.json)
 # {
