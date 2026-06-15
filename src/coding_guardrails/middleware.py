@@ -221,7 +221,7 @@ class CodingGuardrails:
             command_safety=CommandSafetyRule(),
             network=NetworkRule(),
             sensitive_files=SensitiveFileRule(),
-            secrets=SecretRule(),
+            secrets=SecretRule(action="block"),
             loop_detection=LoopDetectionRule(),
             session_budget=SessionBudgetRule(),
             thoroughness=ThoroughnessRule(),

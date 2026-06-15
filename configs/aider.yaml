@@ -3,8 +3,8 @@
 #
 # Usage:
 #   1. Start llama-server on :8080
-#   2. Start proxy: coding-guardrails serve --backend-url http://localhost:8080 --model Qwen3.6-35B-A3B-UD-Q3_K_M
-#   3. Run aider:   aider --model openai/Qwen3.6-35B-A3B-UD-Q3_K_M --api-base http://localhost:8081
+#   2. Start proxy: coding-guardrails serve --backend-url http://localhost:8080 --model Qwen3.5-9B-UD-Q4_K_XL
+#   3. Run aider:   aider --model openai/Qwen3.5-9B-UD-Q4_K_XL --api-base http://localhost:8081
 
 # In your .aider.conf.yml or environment:
 # OPENAI_API_BASE=http://localhost:8081/v1

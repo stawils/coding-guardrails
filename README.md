@@ -17,9 +17,9 @@ One command takes you from "I have a GPU" to "I have a safe local coding-agent b
 pip install coding-guardrails
 
 coding-guardrails server build                                          # builds cg's llama-server (pinned commit; includes the Gemma 4 tool-call fix)
-coding-guardrails server start --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL # LLM backend on :8080
+coding-guardrails server start --model Qwen3.5-9B-UD-Q4_K_XL           # LLM backend on :8080
 coding-guardrails serve --backend-url http://localhost:8080 \
-  --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL --port 8081                 # proxy on :8081
+  --model Qwen3.5-9B-UD-Q4_K_XL --port 8081                           # proxy on :8081
 
 # Point your agent at http://localhost:8081/v1
 ```
@@ -58,12 +58,14 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
-| **Gemma 4 26B-A4B QAT** ⭐ | 20 GB | 200K | ~40+ tok/s | MoE, vision, highest capability |
-| **Qwen3.5-9B** | 18 GB | 200K | ~53 tok/s | Dense, MTP, fastest |
+| **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
+| **Gemma 4 26B-A4B QAT** | 20 GB | 200K | ~40+ tok/s | MoE, vision, highest raw capability |
 | **Gemma 4 12B** | 8 GB | 256K | ~45 tok/s | Dense, multimodal |
-| **Qwen3.6-27B** | 22 GB | 32K | ~28 tok/s | Dense, MTP, best coding quality |
+| **Qwen3.6-27B** ⚠️ | 22 GB | 32K | ~28 tok/s | Dense, MTP. Raw mode — no model profile (skips sampling defaults) |
 
-Any OpenAI-compatible backend works. See [docs/models.md](docs/models.md).
+Any OpenAI-compatible backend works. Models marked ⚠️ have no model profile
+(raw passthrough — sampling defaults and VRAM validation are skipped). See
+[docs/models.md](docs/models.md).
 
 ## Agents
 
@@ -108,7 +110,7 @@ git clone https://github.com/stawils/coding-guardrails.git
 cd coding-guardrails
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest tests/unit/ -q          # 436 tests
+pytest tests/unit/ -q          # 463 tests
 ```
 
 ## License

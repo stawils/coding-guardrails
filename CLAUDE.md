@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 436 tests, ~2s
+pytest tests/unit/ -q          # 463 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -106,13 +106,13 @@ No workspace session — delegation is done via Pi subagents (`subagent()` tool)
 # Session 1: LLM backend (use LM Studio's llama-server — supports DeltaNet models)
 LLAMA=~/.cache/lm-studio/extensions/backends/llama.cpp-linux-x86_64-nvidia-cuda12-avx2-2.18.0/llama-server
 
-# Qwen3.5-9B (200K ctx, MTP)
+# Qwen3.5-9B (200K ctx, MTP, current default — best tool-calling reliability)
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf \
   -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto --spec-type draft-mtp -np 1 -v
 
-# Qwen3.6-27B UD-Q4_K_XL (32K ctx)
+# Qwen3.6-27B UD-Q4_K_XL (32K ctx) — RAW MODE: no model profile (skips sampling defaults)
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q4_K_XL.gguf \
   -c 32768 -ngl 99 --host 0.0.0.0 --port 8080 \
@@ -130,9 +130,10 @@ $LLAMA \
   -c 256000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 
-# Gemma 4 26B A4B QAT UD-Q4_K_XL (200K ctx, ~20 GB VRAM, current default)
+# Gemma 4 26B A4B QAT UD-Q4_K_XL (200K ctx, ~20 GB VRAM)
 #   MoE: 25.2B total / 3.8B active. q8_0 KV cache required for 200K to fit 24 GB.
 #   Use ONLY the Unsloth QAT GGUF — naive Q4_0 loses 15.4pp accuracy.
+#   Highest raw capability, but Qwen3.5-9B is the default (better tool-calling).
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/gemma-4-26B-A4B-it-qat-GGUF/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf \
   -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
@@ -167,11 +168,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 436 tests
+pytest tests/unit/ -q              # All 463 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 436 tests must pass before committing.
+All 463 tests must pass before committing.
 
 ## Eval
 
@@ -196,7 +197,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 436 unit tests must pass
+- All 463 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -227,7 +228,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 436 tests MUST pass
+pytest tests/unit/ -q          # All 463 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.
