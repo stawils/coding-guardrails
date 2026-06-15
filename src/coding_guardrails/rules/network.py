@@ -33,6 +33,9 @@ _UPLOAD_PATTERNS: list[tuple[str, str]] = [
     (r"rsync\s+.*\w+:[\\\\/]", "rsync to remote (path syntax)"),
     (r"\bnc\b\s+.*\d+\s*$", "netcat to remote host"),
     (r"git\s+push\s+(?!.*origin\b)", "git push to remote URL"),
+    (r"\bncat\b\s+.*\d+", "netcat variant (ncat) to remote"),
+    (r"\bsocat\b\s+", "socat network tool"),
+    (r"\b(?:dig|nslookup|host)\b.*\$", "DNS tool with subshell"),
 ]
 
 # Cloud metadata / internal endpoints.
