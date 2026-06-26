@@ -62,9 +62,21 @@ def find_model(profile_name: str, extra_dirs: list[str] | None = None) -> Path |
     profile = get_profile(profile_name)
     if profile is None:
         return None
+    # Candidate filenames to look for. The canonical one is the registered
+    # source filename (what download.py writes); the profile-name stem is a
+    # fallback for models whose GGUF is named after the profile. Source wins
+    # so discovery and download always agree, even when the upstream GGUF name
+    # differs in casing from the profile name (e.g. Ornith's lowercase files).
+    from coding_guardrails.server.sources import get_source
+
+    candidates = [f"{profile.name}.gguf"]
+    src = get_source(profile_name)
+    if src is not None:
+        candidates.insert(0, src.filename)
     for cache_dir in _search_dirs(extra_dirs):
         if not cache_dir.exists():
             continue
-        for gguf in cache_dir.rglob(f"{profile.name}.gguf"):
-            return gguf  # exact stem match
+        for fname in candidates:
+            for gguf in cache_dir.rglob(fname):
+                return gguf
     return None

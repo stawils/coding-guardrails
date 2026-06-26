@@ -48,6 +48,26 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--flash-attn", "auto",
                      "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1"],
     ),
+    # ── Ornith-1.0-9B (Dense, qwen3_5 arch, 256K ctx, reasoning) ──
+    # DeepReinforce RL post-train on Qwen3.5-9B (same hybrid linear/full
+    # attention, same vocab). Reasoning model: <think>...</think> +
+    # reasoning_content, which SafeLlamafileClient already captures.
+    # Official GGUF only — NO Unsloth UD, NO MTP tensors, so do NOT pass
+    # --spec-type draft-mtp. Sampling from the model card (agentic).
+    # Benchmarks are disputed — this profile exists for local testing.
+    "Ornith-1.0-9B-Q8_0": ModelProfile(
+        name="Ornith-1.0-9B-Q8_0",
+        family="Qwen3.5",
+        quant="Q8_0",
+        file_size_gb=9.5,
+        vram_required_gb=18.0,
+        context_tokens=262144,
+        architecture="dense",
+        active_params_b=9.0,
+        swe_bench_verified=69.4,
+        sampling={"temperature": 0.6, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
     # ── Qwen3.5-9B (Dense, 9B params, 200K ctx, MTP) ──
     # Fastest option with proven tool-use reliability. 18 GB VRAM with MTP.
     # Boot: llama-server with --spec-type draft-mtp for ~1.5-2x speedup.

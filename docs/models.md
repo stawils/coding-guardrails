@@ -9,6 +9,7 @@ optimized for local inference with llama-server on consumer GPUs.
 |---|---|---|---|---|---|---|---|
 | **Qwen3.5-9B** ⭐ | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
+| **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
 
 ## Qwen3.5-9B (Default) ⭐
 
@@ -27,6 +28,20 @@ optimized for local inference with llama-server on consumer GPUs.
 - q8_0 KV cache (`-ctk q8_0 -ctv q8_0`) required for 200K to fit 24 GB (~20 GB used, 2.8 GB headroom)
 - No MTP support (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95
 - ⚠️ Prone to degenerate thinking loops on finalization — work is correct on disk but the agent may not return cleanly
+
+## Ornith-1.0-9B (Alternative)
+
+- DeepReinforce RL post-train **on Qwen3.5-9B** — same hybrid linear/full attention
+  architecture (`qwen3_5`), same vocab. Dense 9B, runs at Qwen3.5-class speed.
+- **Reasoning model** — opens with `<think>…</think>`, returns `reasoning_content`, which
+  `SafeLlamafileClient` already captures (no proxy changes needed).
+- Strong agentic-coding benchmarks (disputed — verify locally): claims 69.4 SWE-bench Verified,
+  43.1 Terminal-Bench 2.1. MIT-licensed.
+- Official GGUF only (`deepreinforce-ai/Ornith-1.0-9B-GGUF`) — **no Unsloth UD, no MTP tensors**, so
+  do **not** pass `--spec-type draft-mtp`.
+- Sampling (from card): temp=0.6, top_k=20, top_p=0.95.
+- ⚠️ Prone to finalization loops (re-emitting output files) — work is correct on disk but the
+  agent may not return cleanly. The new `dup_write` rule catches this.
 
 ## Boot Commands
 
@@ -50,6 +65,20 @@ llama-server \
   -ctk q8_0 -ctv q8_0 \
   --temp 1.0 --top-p 0.95 --top-k 64 -np 1
 ```
+
+### Ornith-1.0-9B (200K context, alternative)
+
+```bash
+llama-server \
+  -m ornith-1.0-9b-Q8_0.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 200000 \
+  --temp 0.6 --top-p 0.95 --top-k 20 -np 1
+```
+
+> **Notes:** No `--spec-type draft-mtp` — the official Ornith GGUF has no MTP tensors.
+> Reasoning model: enable a reasoning parser if driving llama-server directly; the
+> cg proxy captures `reasoning_content` automatically via `SafeLlamafileClient`.
 
 > **Notes:** No `--spec-type draft-mtp` — no MTP for Gemma 4 (llama.cpp #22747).
 > **q8_0 KV cache is required** for 200K to fit 24 GB (~20 GB used, 2.8 GB headroom).

@@ -7,7 +7,7 @@
 A proxy that sits between your coding agent and a local LLM, adding two layers:
 
 1. **[Forge](https://github.com/antoinezambelli/forge) (Layer 1)** — rescue parsing, retries, validation, thinking-token capture and reinjection. Makes local models reliable for tool calling.
-2. **Coding Guardrails (Layer 2)** — 11 composable rules: path safety, command blocking, network egress, sensitive-file and secret protection, loop detection, session budgets, and more.
+2. **Coding Guardrails (Layer 2)** — 12 composable rules: path safety, command blocking, network egress, sensitive-file and secret protection, loop detection, duplicate-write detection, session budgets, and more.
 
 One command takes you from "I have a GPU" to "I have a safe local coding-agent backend."
 
@@ -61,6 +61,7 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 | **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
 | **Gemma 4 26B-A4B QAT** | 20 GB | 200K | ~40+ tok/s | MoE, vision, highest raw capability |
 | **Gemma 4 12B** | 8 GB | 256K | ~45 tok/s | Dense, multimodal |
+| **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model, strong agentic coding |
 | **Qwen3.6-27B** ⚠️ | 22 GB | 32K | ~28 tok/s | Dense, MTP. Raw mode — no model profile (skips sampling defaults) |
 
 Any OpenAI-compatible backend works. Models marked ⚠️ have no model profile
@@ -79,13 +80,13 @@ Code, OpenCode, Aider, Continue, Cline, Roo. Setup details in
 Agent → coding-guardrails (:8081) → llama-server (:8080) → GPU
             │
             ├─ Layer 1 (Forge): rescue, validate, retry, thinking capture
-            └─ Layer 2 (Guardrails): 11 composable rules
+            └─ Layer 2 (Guardrails): 12 composable rules
                   ├─ path_safety        ├─ loop_detection
-                  ├─ command_safety     ├─ session_budget
-                  ├─ network            ├─ thoroughness
-                  ├─ sensitive_files    ├─ sequencing
-                  ├─ secrets            └─ tool_resolution
-                  └─ prerequisites
+                  ├─ command_safety     ├─ dup_write
+                  ├─ network            ├─ session_budget
+                  ├─ sensitive_files    ├─ thoroughness
+                  ├─ secrets            ├─ sequencing
+                  └─ prerequisites      └─ tool_resolution
 ```
 
 Details in [docs/architecture.md](docs/architecture.md).
