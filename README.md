@@ -59,14 +59,12 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
 | **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
-| **Gemma 4 26B-A4B QAT** | 20 GB | 200K | ~40+ tok/s | MoE, vision, highest raw capability |
-| **Gemma 4 12B** | 8 GB | 256K | ~45 tok/s | Dense, multimodal |
 | **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model, strong agentic coding |
-| **Qwen3.6-27B** ⚠️ | 22 GB | 32K | ~28 tok/s | Dense, MTP. Raw mode — no model profile (skips sampling defaults) |
 
-Any OpenAI-compatible backend works. Models marked ⚠️ have no model profile
-(raw passthrough — sampling defaults and VRAM validation are skipped). See
-[docs/models.md](docs/models.md).
+These are the two recommended local backends. Qwen3.5-9B is the default for
+reliable tool-calling; Ornith-1.0-9B is the reasoning-specialized alternative
+for harder agentic-coding tasks. Any OpenAI-compatible backend works. See
+[docs/models.md](docs/models.md) for full profiles and boot commands.
 
 ## Agents
 
