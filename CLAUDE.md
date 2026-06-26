@@ -17,7 +17,7 @@ Two-layer proxy between agent and LLM:
 ```
 Agent → :8081 (our proxy)
           ├── Layer 1: Forge (rescue, validate, retry, thinking capture)
-          ├── Layer 2: Coding Guardrails (11 rules)
+          ├── Layer 2: Coding Guardrails (12 rules)
           └── → :8080 (llama-server / LLM backend)
 ```
 
@@ -27,7 +27,7 @@ Agent → :8081 (our proxy)
 2. **Preprocessing**: empty user messages fixed, stale assistant text stripped
 3. **Tool enforcement**: for real coding agents (bash/read/edit/write tools), inject guidance
 4. **Layer 1 (Forge)**: run inference with rescue + retry + thinking capture
-5. **Layer 2 (Guardrails)**: check tool calls against 11 rules
+5. **Layer 2 (Guardrails)**: check tool calls against 12 rules
 6. **Response**: blocked calls return text nudge to agent; allowed calls pass through
 7. **Acceptance shaping**: if the model emits an acceptance-report as bare JSON (the F9 prefill makes it emit JSON, but local models drop the fence), the text response is wrapped in the ` ```acceptance-report ` fence Pi's runtime requires; the contract's real criterion id is seeded into the prefill so reports match contracts
 
@@ -42,7 +42,7 @@ Agent → :8081 (our proxy)
 | `proxy/server.py` | Asyncio HTTP server, `/v1/chat/completions` |
 | `middleware.py` | Composes all rules, `check()` / `record()` API |
 | `cli.py` | `coding-guardrails serve` CLI |
-| `rules/` | 11 guardrail rules |
+| `rules/` | 12 guardrail rules |
 
 ### Guardrail Rules
 
@@ -55,6 +55,7 @@ Agent → :8081 (our proxy)
 | `sensitive_files` | block | Protect sensitive files |
 | `secrets` | block/mask | Secret detection |
 | `loop_detection` | nudge→block | Repeated identical calls (3 nudge, 5 block) |
+| `dup_write` | nudge→block | Identical-content duplicate writes (2 nudge, 3 block) |
 | `session_budget` | nudge | File/command budgets |
 | `thoroughness` | nudge | Premature terminal submission |
 | `sequencing` | nudge | Test-after-change |
@@ -139,6 +140,13 @@ $LLAMA \
   -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 \
   --temp 1.0 --top-p 0.95 --top-k 64 -np 1 -v
+
+# Ornith-1.0-9B Q8_0 (200K ctx, ~18 GB VRAM)
+#   DeepReinforce RL post-train on Qwen3.5-9B — same qwen3_5 hybrid attn arch.
+#   Reasoning model (<think>...</think> + reasoning_content). NO MTP tensors.
+#   Benchmarks disputed (verify locally). Use cg's own cache + cg server start.
+coding-guardrails server start -m Ornith-1.0-9B-Q8_0 --ctx 200000
+#   (equivalent raw llama-server: --temp 0.6 --top-p 0.95 --top-k 20 -np 1, NO --spec-type draft-mtp)
 
 # Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate

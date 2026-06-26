@@ -43,6 +43,11 @@ SOURCES: dict[str, ModelSource] = {
         filename="Qwen3.5-9B-UD-Q4_K_XL.gguf",
         license="Apache-2.0",
     ),
+    "Ornith-1.0-9B-Q8_0": ModelSource(
+        repo_id="deepreinforce-ai/Ornith-1.0-9B-GGUF",
+        filename="ornith-1.0-9b-Q8_0.gguf",
+        license="MIT",
+    ),
     "Qwen3.6-27B-UD-Q4_K_XL": ModelSource(
         repo_id="unsloth/Qwen3.6-27B-MTP-GGUF",
         filename="Qwen3.6-27B-UD-Q4_K_XL.gguf",

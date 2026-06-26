@@ -24,6 +24,7 @@ from coding_guardrails.rules.network import NetworkRule
 from coding_guardrails.rules.path_safety import PathSafetyRule
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 from coding_guardrails.rules.secrets import SecretRule
+from coding_guardrails.rules.dup_write import DuplicateWriteRule
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
@@ -64,6 +65,7 @@ class CodingGuardrails:
         secrets: Secret detection and masking.
         sequencing: Test-after-change nudges.
         tool_resolution: Empty/error result handling.
+        dup_write: Duplicate identical write detection.
     """
 
     prerequisites: PrerequisiteRule | None = None
@@ -77,6 +79,7 @@ class CodingGuardrails:
     thoroughness: ThoroughnessRule | None = None
     sequencing: SequenceRule | None = None
     tool_resolution: ToolResolutionRule | None = None
+    dup_write: DuplicateWriteRule | None = None
 
     @classmethod
     def from_config(cls, config: dict) -> CodingGuardrails:
@@ -210,6 +213,14 @@ class CodingGuardrails:
                 error_output_nudge=error_cfg.get("nudge", "Command produced errors. Read the error output before proceeding."),
             )
 
+        # Duplicate write
+        dw_cfg = config.get("dup_write", {})
+        if dw_cfg.get("enabled", True):
+            rules["dup_write"] = DuplicateWriteRule(
+                nudge_threshold=dw_cfg.get("nudge_threshold", 2),
+                block_threshold=dw_cfg.get("block_threshold", 3),
+            )
+
         return cls(**rules)
 
     @classmethod
@@ -227,6 +238,7 @@ class CodingGuardrails:
             thoroughness=ThoroughnessRule(),
             sequencing=SequenceRule(),
             tool_resolution=ToolResolutionRule(),
+            dup_write=DuplicateWriteRule(),
         )
 
     def _active_rules(self) -> list[Rule]:
@@ -243,6 +255,7 @@ class CodingGuardrails:
             self.thoroughness,
             self.sequencing,
             self.tool_resolution,
+            self.dup_write,
         ] if r is not None]
 
     def check(self, calls: list[ToolCall]) -> CheckResult:

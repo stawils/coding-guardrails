@@ -17,9 +17,11 @@ from coding_guardrails.server.paths import binary_path, source_dir
 
 logger = logging.getLogger("coding_guardrails.server.version")
 
-#: Exact commit cg builds against. Has the gemma-4 tool-call fix.
-PINNED_COMMIT = "afcda09d154a285cd366135f98ffc1d357f7ddbd"
-PINNED_SHORT = "afcda09d1"
+#: Exact commit cg builds against. Latest master (2026-06-26): keeps the
+#: gemma-4 tool-call fix and has the dense qwen35 arch (Ornith-1.0-9B) plus
+#: any recent linear-attention graph fixes.
+PINNED_COMMIT = "5a6a0dd7e1f7342bac4618a223fc21f9cece3b48"
+PINNED_SHORT = "5a6a0dd7e"
 
 
 def installed_commit() -> str | None:

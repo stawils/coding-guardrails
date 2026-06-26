@@ -211,6 +211,21 @@ def test_multiple_calls_mixed_results():
     assert len(result.allowed) == 2
 
 
+def test_from_config_dup_write():
+    config = {
+        "dup_write": {"enabled": True, "nudge_threshold": 4, "block_threshold": 7},
+    }
+    gw = CodingGuardrails.from_config(config)
+    assert gw.dup_write is not None
+    assert gw.dup_write.nudge_threshold == 4
+    assert gw.dup_write.block_threshold == 7
+
+
+def test_defaults_includes_dup_write():
+    gw = CodingGuardrails.defaults()
+    assert gw.dup_write is not None
+
+
 def test_from_config():
     config = {
         "prerequisites": {"enabled": True, "max_violations": 3},

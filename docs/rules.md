@@ -1,6 +1,6 @@
 # Rules Reference
 
-coding-guardrails ships with 11 guardrail rules, each independently configurable.
+coding-guardrails ships with 12 guardrail rules, each independently configurable.
 
 ## Rule Behavior
 
@@ -165,7 +165,35 @@ and `bash("pytest tests/")` are counted separately.
 
 ---
 
-## 8. Session Budget (`session_budget`)
+## 8. Duplicate Write (`dup_write`)
+
+**What it does:** Detects when an agent writes the **same file with identical
+content** repeatedly — a common finalization-loop signature (e.g. re-emitting
+the same summary/output file turn after turn). Only `write`/`create` tools are
+matched; `edit` is intentionally ignored because legitimate edits re-touch the
+same file with different content.
+
+**Default:** Nudge at the 2nd identical write, block at the 3rd.
+
+| Setting | Default | Description |
+|---|---|---|
+| `nudge_threshold` | `2` | Identical writes before nudging |
+| `block_threshold` | `3` | Identical writes before blocking |
+
+**Behavior:**
+- Detects **consecutive** identical writes per path (content hashed via SHA-256).
+- Writing different content resets that path's counter.
+- A `v1 → v2 → v1` revert is **not** flagged (different from the last write).
+- Per-path tracking capped at 64 paths (oldest evicted).
+
+**Examples:**
+- ✅ First `write("summary.md", "# done")` → allowed
+- ⚠️ Second identical `write("summary.md", "# done")` → nudge: "you've written this 2 times"
+- ❌ Third identical `write("summary.md", "# done")` → block: "this is a duplicate write"
+
+---
+
+## 9. Session Budget (`session_budget`)
 
 **What it does:** Caps total operations per session to prevent runaway agents.
 
@@ -184,7 +212,7 @@ and `bash("pytest tests/")` are counted separately.
 
 ---
 
-## 9. Thoroughness (`thoroughness`)
+## 10. Thoroughness (`thoroughness`)
 
 **What it does:** Detects premature terminal submission — when the model calls a
 submission/report tool after exploring only a small fraction of available tools.
@@ -204,7 +232,7 @@ submission/report tool after exploring only a small fraction of available tools.
 
 ---
 
-## 10. Sequencing (`sequencing`)
+## 11. Sequencing (`sequencing`)
 
 **What it does:** Suggests running tests after code changes.
 
@@ -219,7 +247,7 @@ submission/report tool after exploring only a small fraction of available tools.
 
 ---
 
-## 11. Tool Resolution (`tool_resolution`)
+## 12. Tool Resolution (`tool_resolution`)
 
 **What it does:** Warns when tool results are empty or contain errors.
 
