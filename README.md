@@ -59,12 +59,15 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
 | **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
-| **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model, strong agentic coding |
+| **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model; 93% Forge eval (parity with Qwen); answers in prose instead of calling terminal tools |
 
-These are the two recommended local backends. Qwen3.5-9B is the default for
-reliable tool-calling; Ornith-1.0-9B is the reasoning-specialized alternative
-for harder agentic-coding tasks. Any OpenAI-compatible backend works. See
-[docs/models.md](docs/models.md) for full profiles and boot commands.
+These are the two recommended local backends. Qwen3.5-9B is the default —
+fastest (MTP) and most reliable for tool-calling. Ornith-1.0-9B (a reasoning
+RL post-train on Qwen3.5-9B) **matches** it on the Forge 30-scenario eval
+(140/150, 93%) but answers in prose instead of calling terminal tools, so it
+fails workflows that require an explicit final tool call. Any OpenAI-compatible
+backend works. See [docs/models.md](docs/models.md) and the
+[Ornith assessment](reports/2026-06-27_ornith-assessment.md) for details.
 
 ## Agents
 

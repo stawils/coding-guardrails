@@ -35,13 +35,20 @@ optimized for local inference with llama-server on consumer GPUs.
   architecture (`qwen3_5`), same vocab. Dense 9B, runs at Qwen3.5-class speed.
 - **Reasoning model** — opens with `<think>…</think>`, returns `reasoning_content`, which
   `SafeLlamafileClient` already captures (no proxy changes needed).
-- Strong agentic-coding benchmarks (disputed — verify locally): claims 69.4 SWE-bench Verified,
-  43.1 Terminal-Bench 2.1. MIT-licensed.
+- **Measured locally (2026-06-27, Forge 30-scenario eval, Q8_0, proxy mode):**
+  140/150 completion (93%), 132/140 correctness (94%) — **parity with Qwen3.5-9B**,
+  not a gain. The RL post-train does not improve agentic reliability here. Full
+  report: [reports/2026-06-27_ornith-assessment.md](../reports/2026-06-27_ornith-assessment.md).
+- Vendor benchmarks (69.4 SWE-bench Verified, 43.1 Terminal-Bench 2.1) are disputed
+  and did not reproduce as a reliability advantage. MIT-licensed.
 - Official GGUF only (`deepreinforce-ai/Ornith-1.0-9B-GGUF`) — **no Unsloth UD, no MTP tensors**, so
   do **not** pass `--spec-type draft-mtp`.
 - Sampling (from card): temp=0.6, top_k=20, top_p=0.95.
-- ⚠️ Prone to finalization loops (re-emitting output files) — work is correct on disk but the
-  agent may not return cleanly. The new `dup_write` rule catches this.
+- ⚠️ **Prefers prose answers over terminal tool calls.** On the Forge eval Ornith
+  called `respond()` only 2× in 150 runs, answering in plain text instead. This is
+  fatal for workflows that require an explicit final tool call to terminate (e.g.
+  `tool_selection`, 0/5) but harmless otherwise. The `dup_write` rule catches the
+  related output-file re-emission loop.
 
 ## Boot Commands
 
