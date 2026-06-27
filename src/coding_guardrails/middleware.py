@@ -183,6 +183,7 @@ class CodingGuardrails:
                 window=loop_cfg.get("window", 10),
                 nudge_threshold=loop_cfg.get("nudge_threshold", 3),
                 block_threshold=loop_cfg.get("block_threshold", 5),
+                stagnation_threshold=loop_cfg.get("stagnation_threshold", 14),
             )
 
         # Session budget
