@@ -144,7 +144,8 @@ $LLAMA \
 # Ornith-1.0-9B Q8_0 (200K ctx, ~18 GB VRAM)
 #   DeepReinforce RL post-train on Qwen3.5-9B — same qwen3_5 hybrid attn arch.
 #   Reasoning model (<think>...</think> + reasoning_content). NO MTP tensors.
-#   Benchmarks disputed (verify locally). Use cg's own cache + cg server start.
+#   Verified locally 2026-06-27: Forge 93% = parity with Qwen3.5-9B (no gain, no regression).
+#   Prefers prose over terminal tool calls (respond() only 2x/150 runs). Use cg's own cache + cg server start.
 coding-guardrails server start -m Ornith-1.0-9B-Q8_0 --ctx 200000
 #   (equivalent raw llama-server: --temp 0.6 --top-p 0.95 --top-k 20 -np 1, NO --spec-type draft-mtp)
 
