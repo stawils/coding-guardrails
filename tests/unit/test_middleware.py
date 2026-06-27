@@ -221,6 +221,15 @@ def test_from_config_dup_write():
     assert gw.dup_write.block_threshold == 7
 
 
+def test_from_config_loop_detection_stagnation_threshold():
+    config = {
+        "loop_detection": {"enabled": True, "stagnation_threshold": 7},
+    }
+    gw = CodingGuardrails.from_config(config)
+    assert gw.loop_detection is not None
+    assert gw.loop_detection.stagnation_threshold == 7
+
+
 def test_defaults_includes_dup_write():
     gw = CodingGuardrails.defaults()
     assert gw.dup_write is not None
