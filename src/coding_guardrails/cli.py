@@ -41,6 +41,8 @@ def main() -> None:
               help="Seconds idle before the managed backend unloads (frees VRAM). Default 90.")
 @click.option("--queue-timeout", default=120.0, type=float,
               help="Seconds to wait for free VRAM before giving up (→ 503 → fleet L2 fallback). Default 120.")
+@click.option("--vram-margin", default=2.0, type=float,
+              help="Safety margin (GB) of free VRAM required above the model's footprint before loading. Lower for tight GPUs with a known baseline; the model must still fit. Default 2.")
 def serve(
     backend_url: str,
     model: str,
@@ -57,6 +59,7 @@ def serve(
     manage_backend: bool,
     idle_timeout: float,
     queue_timeout: float,
+    vram_margin: float,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -96,6 +99,7 @@ def serve(
             manage_backend=manage_backend,
             idle_timeout=idle_timeout,
             queue_timeout=queue_timeout,
+            vram_margin=vram_margin,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -115,6 +119,7 @@ async def _run_proxy(
     manage_backend: bool = False,
     idle_timeout: float = 90.0,
     queue_timeout: float = 120.0,
+    vram_margin: float = 2.0,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -175,6 +180,7 @@ async def _run_proxy(
         from coding_guardrails.server.manager import BackendManager, BackendConfig
         backend_manager = BackendManager(BackendConfig(
             profile=model, idle_timeout=idle_timeout, queue_timeout=queue_timeout,
+            vram_margin_gb=vram_margin,
         ))
         click.echo(f"  Managed backend: lazy load + idle-unload ({idle_timeout:.0f}s), "
                    f"VRAM-queue ({queue_timeout:.0f}s → 503 → fleet L2)")
