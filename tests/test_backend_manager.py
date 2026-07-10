@@ -168,3 +168,24 @@ async def test_unload_now_is_idempotent(fake):
     await m.unload_now()
     assert fl.stops == 1
     assert not m.is_loaded
+
+
+async def test_verify_clean_after_unload(fake, monkeypatch):
+    # After stop, no llama-server processes remain → clean.
+    monkeypatch.setattr(mgr_mod, "llama_processes", lambda: [])
+    m = BackendManager(_cfg())
+    await m.acquire()
+    await m.unload_now()
+    report = m.verify_clean()
+    assert report["clean"] is True
+    assert report["orphans"] == 0
+
+
+def test_verify_clean_detects_orphan(monkeypatch):
+    # A lingering llama-server process → not clean.
+    monkeypatch.setattr(mgr_mod, "llama_processes", lambda: [(99999, "llama-server -m x.gguf")])
+    m = BackendManager(_cfg())
+    report = m.verify_clean()
+    assert report["clean"] is False
+    assert report["orphans"] == 1
+    assert 99999 in report["orphan_pids"]

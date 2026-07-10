@@ -76,3 +76,32 @@ def gpu_holders() -> list[tuple[int, str, float]]:
         except (ValueError, IndexError):
             continue
     return holders
+
+
+def llama_processes() -> list[tuple[int, str]]:
+    """Running llama-server processes: ``[(pid, cmdline)]``.
+
+    Used by the backend manager's ``verify_clean()`` to detect orphaned
+    llama-server processes after an unload. Best-effort via ``pgrep``.
+    """
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-af", "llama-server"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+    procs: list[tuple[int, str]] = []
+    for line in proc.stdout.strip().splitlines():
+        line = line.strip()
+        if not line or "pgrep" in line:
+            continue
+        parts = line.split(None, 1)
+        try:
+            procs.append((int(parts[0]), parts[1] if len(parts) > 1 else ""))
+        except (ValueError, IndexError):
+            continue
+    return procs

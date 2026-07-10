@@ -26,7 +26,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from coding_guardrails.server import launcher
-from coding_guardrails.server.manager_vram import free_vram_gb, gpu_holders
+from coding_guardrails.server.manager_vram import free_vram_gb, gpu_holders, llama_processes
 
 logger = logging.getLogger("coding_guardrails.server.manager")
 
@@ -112,6 +112,20 @@ class BackendManager:
             self._cancel_idle_timer()
             await self._do_unload(reason="forced (unload_now)")
 
+    def verify_clean(self) -> dict:
+        """Post-unload cleanliness report: orphan llama-server procs + free VRAM.
+
+        ``clean`` is True only when no orphan llama-server remains. Used by
+        ``cg status`` and node-1.4 acceptance (clean unload = VRAM freed + no orphans).
+        """
+        procs = llama_processes()
+        return {
+            "orphans": len(procs),
+            "orphan_pids": [pid for pid, _ in procs],
+            "free_vram_gb": free_vram_gb(),
+            "clean": len(procs) == 0,
+        }
+
     # ── internals ────────────────────────────────────────────────────────────
 
     async def _load(self) -> None:
@@ -180,7 +194,17 @@ class BackendManager:
         if self._load_task is not None and not self._load_task.done():
             self._load_task.cancel()
         self._load_task = None
-        logger.info("backend unloaded (%s) — VRAM freed", reason)
+        report = self.verify_clean()
+        if report["orphans"]:
+            logger.warning(
+                "backend unloaded (%s) but %d orphan llama-server remain: %s",
+                reason, report["orphans"], report["orphan_pids"],
+            )
+        else:
+            logger.info(
+                "backend unloaded (%s) — VRAM freed (%.1f GB free), no orphans",
+                reason, report["free_vram_gb"],
+            )
 
     def _maybe_idle(self) -> None:
         """Arm the idle-unload timer if idle + loaded. Caller holds ``_lock``."""
