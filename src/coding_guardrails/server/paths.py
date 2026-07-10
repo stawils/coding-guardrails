@@ -64,6 +64,16 @@ def log_file() -> Path:
     return run_dir() / "llama-server.log"
 
 
+def proxy_pid_file() -> Path:
+    """PID file for the managed proxy (``cg up``)."""
+    return run_dir() / "proxy.pid"
+
+
+def proxy_log_file() -> Path:
+    """stdout/stderr log for the managed proxy."""
+    return run_dir() / "proxy.log"
+
+
 def pin_file() -> Path:
     """Record of the pinned commit the build was performed against."""
     return data_dir() / "llama.cpp.pin"

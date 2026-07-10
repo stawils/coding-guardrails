@@ -289,6 +289,161 @@ def list_models() -> None:
             click.echo(f"    {part} \\")
 
 
+# ── Fleet bundle: cg up / down / status (node 1.5) ──────────────────────────
+
+@main.command("up")
+@click.option("-m", "--model", default="Qwen3.5-9B-UD-Q4_K_XL", show_default=True,
+              help="Model profile to load on demand.")
+@click.option("--vram-margin", default=2.0, type=float, show_default=True,
+              help="Free-VRAM margin (GB) above the model footprint required to load.")
+@click.option("--port", default=8081, type=int, show_default=True, help="Proxy port.")
+@click.option("--backend-port", default=8080, type=int, show_default=True, help="Backend llama-server port.")
+@click.option("--idle-timeout", default=90.0, type=float, show_default=True)
+@click.option("--queue-timeout", default=120.0, type=float, show_default=True)
+def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
+    """Start the managed proxy (always-on, lazy GPU backend) — one-command fleet up."""
+    import os
+    import subprocess
+    import sys
+    import time
+
+    from coding_guardrails.server.paths import proxy_pid_file, proxy_log_file, run_dir
+
+    pf = proxy_pid_file()
+    if pf.exists():
+        try:
+            pid = int(pf.read_text().strip())
+            try:
+                os.kill(pid, 0)
+                click.secho(f"proxy already running (pid {pid}). Run: cg down", fg="yellow", err=True)
+                sys.exit(1)
+            except ProcessLookupError:
+                pass  # stale pid file
+        except (ValueError, OSError):
+            pass
+
+    run_dir().mkdir(parents=True, exist_ok=True)
+    argv = [
+        sys.executable, "-m", "coding_guardrails", "serve",
+        "--manage-backend", "--model", model,
+        "--vram-margin", str(vram_margin),
+        "--port", str(port),
+        "--backend-url", f"http://localhost:{backend_port}",
+        "--idle-timeout", str(idle_timeout),
+        "--queue-timeout", str(queue_timeout),
+        "--serialize",
+    ]
+    log = proxy_log_file().open("a", buffering=1)
+    log.write(f"\n=== cg up {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    proc = subprocess.Popen(
+        argv, stdout=log, stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, start_new_session=True,
+    )
+    pf.write_text(f"{proc.pid}\n")
+    click.secho(f"Managed proxy up (pid {proc.pid}) → http://127.0.0.1:{port}/v1", fg="green")
+    click.echo(f"  model={model} | idle-unload {idle_timeout:.0f}s | queue-timeout {queue_timeout:.0f}s | log={proxy_log_file()}")
+
+
+@main.command("down")
+def _down() -> None:
+    """Stop the managed proxy + unload the GPU backend (clean: VRAM freed, no orphans)."""
+    import os
+    import signal
+    import time
+
+    from coding_guardrails.server import launcher
+    from coding_guardrails.server.manager_vram import free_vram_gb, llama_processes
+    from coding_guardrails.server.paths import proxy_pid_file
+
+    pf = proxy_pid_file()
+    pid = None
+    if pf.exists():
+        try:
+            pid = int(pf.read_text().strip())
+        except (ValueError, OSError):
+            pass
+
+    stopped_proxy = False
+    if pid:
+        for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, 2)):
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                break
+            for _ in range(grace * 5):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    stopped_proxy = True
+                    break
+                time.sleep(0.2)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                stopped_proxy = True
+                break
+        try:
+            pf.unlink()
+        except OSError:
+            pass
+        click.echo(f"proxy (pid {pid}) stopped")
+
+    # Belt-and-suspenders: ensure the backend llama-server is gone (the proxy may
+    # not run its finally/unload on SIGTERM).
+    if launcher.is_running():
+        launcher.stop()
+        click.echo("backend llama-server stopped")
+
+    orphans = llama_processes()
+    click.echo(f"VRAM free: {free_vram_gb():.1f} GB | orphan llama-server: {len(orphans)}")
+    if orphans:
+        click.secho(f"  ⚠ orphans remain: {[p for p, _ in orphans]}", fg="yellow", err=True)
+    elif stopped_proxy or launcher.is_running():
+        click.secho("down (clean).", fg="green")
+    else:
+        click.secho("not running.", fg="yellow")
+
+
+@main.command("status")
+def _status() -> None:
+    """Show managed-proxy + backend + GPU state."""
+    import os
+    import urllib.request
+
+    from coding_guardrails.server import launcher
+    from coding_guardrails.server.manager_vram import free_vram_gb, llama_processes
+    from coding_guardrails.server.paths import proxy_pid_file
+
+    pf = proxy_pid_file()
+    proxy_up = False
+    if pf.exists():
+        try:
+            pid = int(pf.read_text().strip())
+            try:
+                os.kill(pid, 0)
+                proxy_up = True
+            except ProcessLookupError:
+                pid = None
+            click.echo(f"Proxy:   {'up' if proxy_up else 'down'}" + (f" (pid {pid})" if pid else ""))
+        except (ValueError, OSError):
+            click.echo("Proxy:   ? (bad pid file)")
+    else:
+        click.echo("Proxy:   down (no pid file — run: cg up)")
+
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8081/health", timeout=3)
+        click.echo("  /health: ok")
+    except Exception:
+        if proxy_up:
+            click.echo("  /health: (no response)")
+
+    click.echo(f"Backend: {'loaded (llama-server running)' if launcher.is_running() else 'unloaded (lazy)'}")
+    procs = llama_processes()
+    click.echo(f"GPU:     {free_vram_gb():.1f} GB free | llama-server procs: {len(procs)}")
+    if procs:
+        click.echo(f"  pids: {[p for p, _ in procs]}")
+
+
 # Import and register the eval command
 from coding_guardrails.eval import eval_cmd
 main.add_command(eval_cmd, "eval")
