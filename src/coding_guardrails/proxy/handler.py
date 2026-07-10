@@ -166,6 +166,7 @@ async def handle_chat_completions(
     guardrails: CodingGuardrails,
     max_retries: int = 3,
     rescue_enabled: bool = True,
+    auto_no_thinking: bool = True,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Handle /v1/chat/completions with Forge Layer 1 + our Layer 2.
 
@@ -250,9 +251,15 @@ async def handle_chat_completions(
 
     tool_names = [s.name for s in tool_specs]
 
-    # No tools → plain chat completion, pass through
+    # No tools → plain chat completion (generation). Auto-disable thinking so
+    # Qwen3.5 emits a clean direct answer instead of reasoning_content that eats
+    # the token budget. Overridable per-request via chat_template_kwargs.enable_thinking.
     if not tool_specs:
-        logger.info("Plain text (no tools)")
+        if auto_no_thinking:
+            if sampling is None:
+                sampling = {}
+            sampling.setdefault("chat_template_kwargs", {}).setdefault("enable_thinking", False)
+        logger.info("Plain text (no tools)%s", " [auto enable_thinking=false]" if auto_no_thinking else "")
         t0 = time.monotonic()
         api_format = getattr(client, "api_format", "ollama")
         api_messages = fold_and_serialize(messages, api_format)
