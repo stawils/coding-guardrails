@@ -101,17 +101,47 @@ Layer 1 captures thinking tokens from the model's response. On retry (failed val
 | `llm-server` | `llama-server` with model | :8080 |
 | `guardrails` | `coding-guardrails serve` | :8081 |
 
-No workspace session — delegation is done via Pi subagents (`subagent()` tool) pointing at the proxy.
+### Fleet L1 usage (managed backend — `cg up` / `cg down` / `cg status`)
+
+For fleet/orchestrated workers, use the managed backend instead of manual tmux sessions:
 
 ```bash
-# Session 1: LLM backend (use LM Studio's llama-server — supports DeltaNet models)
-LLAMA=~/.cache/lm-studio/extensions/backends/llama.cpp-linux-x86_64-nvidia-cuda12-avx2-2.18.0/llama-server
+# systemd-managed proxy (always-on, lazy GPU backend)
+# Unit: ~/.config/systemd/user/coding-guardrails.service (enabled, auto-start)
+cg up --vram-margin 0.0   # shared desktop GPU: desktop uses ~3.3 GB baseline
+systemctl --user start coding-guardrails.service  # or let systemd handle it
+```
 
-# Qwen3.5-9B (200K ctx, MTP, current default — best tool-calling reliability)
+Workers point at `http://localhost:8081/v1` via `GUIDA_PROVIDER=coding-guardrails GUIDA_MODEL=Qwen3.5-9B-UD-Q4_K_XL`.
+The proxy loads the GPU model lazily on first request and unloads after idle (90s).
+
+**VRAM on shared desktop GPU**: the default 2 GB margin deadlocks when the desktop + other
+processes (SearXNG ~0.9 GB, ComfyUI variable) eat into the 24 GB. Use `--vram-margin 0.0`
+for shared-GPU systems. The systemd unit bakes this in.
+
+**Stale bytecode caveat**: if guardrail rules block commands that should be safe, flush
+`__pycache__` and restart — a stale `.pyc` from a prior install can carry different patterns.
+
+### Manual tmux sessions (development/eval)
+
+```bash
+# Session 1: LLM backend (local llama.cpp build, symlinked to build/bin/llama-server)
+#   ~/llama.cpp/llama-server -> build/bin/llama-server
+#   To rebuild: cd ~/llama.cpp && git pull && cmake -S . -B build -DGGML_CUDA=ON -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 24 --target llama-server
+LLAMA=~/llama.cpp/llama-server
+
+# Qwen3.5-9B-MTP (current default — best tool-calling reliability)
+#   Hybrid SSM/Transformer arch (qwen35), 33 layers. MTP = Multi-Token Prediction:
+#   `--spec-type draft-mtp` uses the model's built-in MTP head as a draft model for
+#   speculative decoding (~1.5-2x faster generation, no separate draft model, no
+#   quality loss). Verified working 2026-07-03 on build 9860.
+#   The model emits `reasoning_content` by default; add `--reasoning-budget 0` to disable thinking.
+#   PORT: backend MUST be :8080 — :8081 is the guardrails proxy and will collide.
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf \
-  -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 32768 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto --spec-type draft-mtp -np 1 -v
+#   Tune up: raise -c toward 200000 (max) for long context, --spec-draft-n-max 5 for more speed.
 
 # Qwen3.6-27B UD-Q4_K_XL (32K ctx) — RAW MODE: no model profile (skips sampling defaults)
 $LLAMA \
@@ -164,8 +194,9 @@ coding-guardrails serve \
 
 ### Notes
 
-- **Use LM Studio's llama-server** (`~/.cache/lm-studio/extensions/.../2.18.0/llama-server`), NOT `~/llama.cpp/llama-server`. The LM Studio build supports DeltaNet/SSM tensors (Qwen3.6); the local build does not.
-- `~/llama.cpp/llama-server` is older (build 8276) and fails on Qwen3.6-27B models (missing `ssm_conv1d` tensors).
+- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). Rebuilt 2026-07-03 to latest master (commit `fdb1db877`, build 9860) — supports Qwen3.5-MTP, Qwen3.6-27B (qwen3next arch / `ssm_conv1d`), Gemma 4, Ornith. Build config: `GGML_CUDA=ON`, `LLAMA_CURL=ON`, Release. NCCL disabled (single-GPU). Stale `llama-server.bak.8276` kept as backup.
+- **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
+- **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
 - Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
