@@ -35,6 +35,12 @@ def main() -> None:
 @click.option("--timeout", default=600, type=float, help="Backend request timeout in seconds (default: 600)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging")
 @click.option("--log-file", default=None, help="Also log to this file (for eval)")
+@click.option("--manage-backend", is_flag=True,
+              help="Manage the llama-server backend lifecycle: lazy load + idle-unload, with a VRAM-gate + queue. The proxy stays always-on; the GPU model loads on demand and frees VRAM when idle (shares the GPU with ComfyUI/Ollama).")
+@click.option("--idle-timeout", default=90.0, type=float,
+              help="Seconds idle before the managed backend unloads (frees VRAM). Default 90.")
+@click.option("--queue-timeout", default=120.0, type=float,
+              help="Seconds to wait for free VRAM before giving up (→ 503 → fleet L2 fallback). Default 120.")
 def serve(
     backend_url: str,
     model: str,
@@ -48,6 +54,9 @@ def serve(
     timeout: float,
     verbose: bool,
     log_file: str | None,
+    manage_backend: bool,
+    idle_timeout: float,
+    queue_timeout: float,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -84,6 +93,9 @@ def serve(
             guardrails_enabled=not no_guardrails,
             serialize=serialize,
             timeout=timeout,
+            manage_backend=manage_backend,
+            idle_timeout=idle_timeout,
+            queue_timeout=queue_timeout,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -100,6 +112,9 @@ async def _run_proxy(
     guardrails_enabled: bool,
     serialize: bool,
     timeout: float = 600.0,
+    manage_backend: bool = False,
+    idle_timeout: float = 90.0,
+    queue_timeout: float = 120.0,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -129,10 +144,17 @@ async def _run_proxy(
         default_max_tokens=16384,
     )
 
-    # Auto-detect context budget from backend
-    ctx_len = await client.get_context_length()
-    budget = ctx_len if ctx_len is not None else 8192
-    logging.info("Context budget: %d tokens", budget)
+    # Context budget: in managed mode the backend isn't up yet (lazy), so use the
+    # model profile's context_tokens; otherwise auto-detect from the backend.
+    if manage_backend:
+        from coding_guardrails.models.profiles import get_profile
+        prof = get_profile(model)
+        budget = prof.context_tokens if prof else 8192
+        logging.info("Context budget: %d tokens (from profile; backend lazy)", budget)
+    else:
+        ctx_len = await client.get_context_length()
+        budget = ctx_len if ctx_len is not None else 8192
+        logging.info("Context budget: %d tokens", budget)
 
     context_manager = ContextManager(
         strategy=TieredCompact(),
@@ -147,6 +169,16 @@ async def _run_proxy(
     else:
         guardrails = CodingGuardrails()  # No rules
 
+    # ── Managed backend (lazy load + idle-unload, VRAM-gate + queue) ──
+    backend_manager = None
+    if manage_backend:
+        from coding_guardrails.server.manager import BackendManager, BackendConfig
+        backend_manager = BackendManager(BackendConfig(
+            profile=model, idle_timeout=idle_timeout, queue_timeout=queue_timeout,
+        ))
+        click.echo(f"  Managed backend: lazy load + idle-unload ({idle_timeout:.0f}s), "
+                   f"VRAM-queue ({queue_timeout:.0f}s → 503 → fleet L2)")
+
     # ── Start server ──
     server = GuardrailProxyServer(
         client=client,
@@ -158,6 +190,7 @@ async def _run_proxy(
         max_retries=max_retries,
         rescue_enabled=rescue_enabled,
         model_name=model,
+        backend_manager=backend_manager,
     )
     await server.start()
     click.echo(f"\n  Proxy ready at http://{host}:{port}")

@@ -52,6 +52,7 @@ class GuardrailProxyServer:
         max_retries: int = 3,
         rescue_enabled: bool = True,
         model_name: str = "coding-guardrails",
+        backend_manager=None,  # optional coding_guardrails.server.manager.BackendManager
     ) -> None:
         self._client = client
         self._context_manager = context_manager
@@ -62,6 +63,7 @@ class GuardrailProxyServer:
         self._max_retries = max_retries
         self._rescue_enabled = rescue_enabled
         self._serialize = serialize_requests
+        self._backend_manager = backend_manager
         self._server: asyncio.Server | None = None
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
@@ -77,6 +79,8 @@ class GuardrailProxyServer:
 
     async def stop(self) -> None:
         """Stop the server."""
+        if self._backend_manager is not None:
+            await self._backend_manager.unload_now()
         if self._worker_task is not None:
             self._worker_task.cancel()
             try:
@@ -267,6 +271,17 @@ class GuardrailProxyServer:
         return item.future.result()
 
     async def _run_handler(self, body: dict[str, Any]) -> Any:
+        # Managed backend: ensure the GPU model is loaded (VRAM-gate + queue) before
+        # inference, then release → idle-unload timer. Acquire may raise
+        # BackendUnavailable (queue-timeout) → surfaced as 503 → fleet L2 fallback.
+        acquired = False
+        if self._backend_manager is not None:
+            try:
+                await self._backend_manager.acquire()
+                acquired = True
+            except Exception as exc:
+                logger.warning("backend unavailable: %s", exc)
+                return exc
         try:
             return await handle_chat_completions(
                 body=body,
@@ -279,6 +294,9 @@ class GuardrailProxyServer:
         except Exception as exc:
             logger.exception("Handler error")
             return exc
+        finally:
+            if acquired:
+                await self._backend_manager.release()
 
     # ── HTTP helpers ──
 
