@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 from coding_guardrails.rules.prerequisites import _tool_matches
 
 # Default trigger/suggest prefixes covering all major agents.
 _DEFAULT_EDIT_PREFIXES = ("edit", "write", "create")
-_DEFAULT_SUGGEST_PREFIXES = ("bash", "shell", "run", "exec")
+_DEFAULT_SUGGEST_PREFIXES = ("bash", "shell", "run", "exec", "uv")
 
 
 @dataclass

@@ -60,9 +60,19 @@ class RuleResult:
     def block(tool: str, nudge: str, *, reason: str | None = None) -> RuleResult:
         return RuleResult(action=Action.BLOCK, tool=tool, nudge=nudge, reason=reason)
 
-    @staticmethod
-    def nudge(tool: str, message: str) -> RuleResult:
-        return RuleResult(action=Action.NUDGE, tool=tool, nudge=message)
+    # The nudge(...) factory is defined below, outside the class body: a dataclass
+    # field and a same-named method cannot coexist here — the method would shadow
+    # the field default, making allow(x).nudge return the function instead of None.
+
+
+# Factory for NUDGE results. Assigned outside RuleResult's body to avoid the
+# field/method name collision noted above; keeps RuleResult.nudge(tool, message)
+# working while the field default stays None.
+def _rule_result_nudge(tool: str, message: str) -> RuleResult:
+    return RuleResult(action=Action.NUDGE, tool=tool, nudge=message)
+
+
+RuleResult.nudge = staticmethod(_rule_result_nudge)  # type: ignore[method-assign]
 
 
 @dataclass

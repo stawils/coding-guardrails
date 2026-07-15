@@ -42,7 +42,7 @@ class TestToolMatching:
 
     @pytest.mark.parametrize("tool_name", [
         "read", "read_file", "Read", "READ_FILE",
-        "cat", "head", "tail", "less",
+        "cat", "head", "tail", "less", "bat", "batcat",
     ])
     def test_read_tools_record(self, rule, tool_name):
         call = ToolCall(tool=tool_name, args={"path": "src/main.py"})

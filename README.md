@@ -7,7 +7,7 @@
 A proxy that sits between your coding agent and a local LLM, adding two layers:
 
 1. **[Forge](https://github.com/antoinezambelli/forge) (Layer 1)** — rescue parsing, retries, validation, thinking-token capture and reinjection. Makes local models reliable for tool calling.
-2. **Coding Guardrails (Layer 2)** — 12 composable rules: path safety, command blocking, network egress, sensitive-file and secret protection, loop detection, duplicate-write detection, session budgets, and more.
+2. **Coding Guardrails (Layer 2)** — 13 composable rules: path safety, command blocking, network egress, sensitive-file and secret protection, loop detection, duplicate-write detection, session budgets, and more.
 
 One command takes you from "I have a GPU" to "I have a safe local coding-agent backend."
 
@@ -81,7 +81,7 @@ Code, OpenCode, Aider, Continue, Cline, Roo. Setup details in
 Agent → coding-guardrails (:8081) → llama-server (:8080) → GPU
             │
             ├─ Layer 1 (Forge): rescue, validate, retry, thinking capture
-            └─ Layer 2 (Guardrails): 12 composable rules
+            └─ Layer 2 (Guardrails): 13 composable rules
                   ├─ path_safety        ├─ loop_detection
                   ├─ command_safety     ├─ dup_write
                   ├─ network            ├─ session_budget
@@ -112,7 +112,7 @@ git clone https://github.com/stawils/coding-guardrails.git
 cd coding-guardrails
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-pytest tests/unit/ -q          # 463 tests
+pytest tests/unit/ -q          # 538 tests
 ```
 
 ## License

@@ -149,7 +149,7 @@ def start(
     binary = binary_path()
     if not binary.exists():
         raise FileNotFoundError(
-            f"llama-server binary not built. Run: cg server build"
+            "llama-server binary not built. Run: cg server build"
         )
     if is_running():
         raise RuntimeError(

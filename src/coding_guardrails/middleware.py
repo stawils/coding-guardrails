@@ -9,7 +9,8 @@ The middleware holds all configured rules and provides:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, replace
+import os
+from dataclasses import dataclass, replace
 
 from coding_guardrails.rules.base import (
     Action,
@@ -25,6 +26,7 @@ from coding_guardrails.rules.path_safety import PathSafetyRule
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 from coding_guardrails.rules.secrets import SecretRule
 from coding_guardrails.rules.dup_write import DuplicateWriteRule
+from coding_guardrails.rules.lint import LintRule, workspace_from_env
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
@@ -80,6 +82,7 @@ class CodingGuardrails:
     sequencing: SequenceRule | None = None
     tool_resolution: ToolResolutionRule | None = None
     dup_write: DuplicateWriteRule | None = None
+    lint: LintRule | None = None
 
     @classmethod
     def from_config(cls, config: dict) -> CodingGuardrails:
@@ -222,6 +225,17 @@ class CodingGuardrails:
                 block_threshold=dw_cfg.get("block_threshold", 3),
             )
 
+        # Lint gate — run the project linter on edited files (noticing offload).
+        # workspace/mode fall back to $CG_LINT_WORKSPACE / $CG_LINT_MODE so the
+        # rule can be enabled for a config-less deployment via env vars.
+        lint_cfg = config.get("lint", {})
+        if lint_cfg.get("enabled", True):
+            rules["lint"] = LintRule(
+                workspace=workspace_from_env(lint_cfg.get("workspace")),
+                mode=lint_cfg.get("mode", os.environ.get("CG_LINT_MODE", "nudge")),
+                timeout=lint_cfg.get("timeout", 10.0),
+            )
+
         return cls(**rules)
 
     @classmethod
@@ -240,6 +254,7 @@ class CodingGuardrails:
             sequencing=SequenceRule(),
             tool_resolution=ToolResolutionRule(),
             dup_write=DuplicateWriteRule(),
+            lint=LintRule(),
         )
 
     def _active_rules(self) -> list[Rule]:
@@ -257,6 +272,7 @@ class CodingGuardrails:
             self.sequencing,
             self.tool_resolution,
             self.dup_write,
+            self.lint,
         ] if r is not None]
 
     def check(self, calls: list[ToolCall]) -> CheckResult:

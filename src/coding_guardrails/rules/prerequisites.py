@@ -10,13 +10,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 # Tool name matching: prefix-based so 'edit' matches 'edit', 'edit_file',
 # 'Edit', etc. Covers Pi (edit/read/bash), Claude Code (Edit/Read),
 # Aider, OpenCode, and generic agents.
 _DEFAULT_EDIT_TOOLS = ("edit", "write", "create")
-_DEFAULT_READ_TOOLS = ("read", "cat", "head", "tail", "less")
+_DEFAULT_READ_TOOLS = ("read", "cat", "head", "tail", "less", "bat")
 # Tools that create new files from scratch — no prior read needed for
 # non-existent paths. 'edit' is intentionally excluded: editing a
 # non-existent file is usually a mistake (wrong path) and should be

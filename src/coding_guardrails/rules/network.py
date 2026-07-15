@@ -11,9 +11,8 @@ from __future__ import annotations
 import re
 import urllib.parse
 from dataclasses import dataclass, field
-from typing import ClassVar
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 from coding_guardrails.rules.prerequisites import _tool_matches
 
 # Tool prefixes that execute network commands.

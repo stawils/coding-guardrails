@@ -9,9 +9,8 @@ import os
 import re
 from dataclasses import dataclass, field
 from typing import ClassVar
-from pathlib import PurePosixPath
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 
 @dataclass

@@ -17,7 +17,6 @@ Common failure modes this addresses:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from coding_guardrails.rules.base import RuleResult, ToolCall
 

@@ -6,9 +6,9 @@ guiding the agent to adapt its approach.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 
 @dataclass
@@ -69,6 +69,9 @@ class ToolResolutionRule:
             "permission denied",
             "command not found",
             "fatal:",
+            "traceback (most recent call last)",
+            "exception",
+            "failed",
         ]
         for indicator in error_indicators:
             if indicator in result_lower:

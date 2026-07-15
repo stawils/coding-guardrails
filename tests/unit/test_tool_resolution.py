@@ -76,3 +76,40 @@ def test_normal_result():
     rule = ToolResolutionRule()
     result = rule.check_result("bash", "file1.py\nfile2.py\nfile3.py")
     assert result is None
+
+
+def test_traceback_error_nudge():
+    """check_tool_result with traceback should nudge."""
+    rule = ToolResolutionRule()
+    result = rule.check_result("bash", "Traceback (most recent call last):\n  File \"test.py\", line 1\n    something()\nValueError: error occurred")
+    assert result is not None
+    assert result.action == Action.NUDGE
+    assert "error" in result.nudge.lower()
+
+
+def test_exception_error_nudge():
+    """check_tool_result with 'exception' should nudge."""
+    rule = ToolResolutionRule()
+    result = rule.check_result("bash", "An exception occurred during execution")
+    assert result is not None
+    assert result.action == Action.NUDGE
+    assert "error" in result.nudge.lower()
+
+
+def test_failed_error_nudge():
+    """check_tool_result with 'failed' should nudge."""
+    rule = ToolResolutionRule()
+    result = rule.check_result("bash", "The build process failed with errors")
+    assert result is not None
+    assert result.action == Action.NUDGE
+    assert "error" in result.nudge.lower()
+
+
+def test_new_indicators_no_false_positive():
+    """New error indicators should not trigger on clean results."""
+    rule = ToolResolutionRule()
+    result = rule.check_result("bash", "Processing completed successfully")
+    assert result is None
+
+
+

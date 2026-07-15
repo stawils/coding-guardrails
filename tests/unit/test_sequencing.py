@@ -39,6 +39,17 @@ class TestToolMatching:
         assert result.action == Action.ALLOW
         assert rule.has_pending is False  # suggestion cleared
 
+    @pytest.mark.parametrize("tool_name", [
+        "uv", "uv run", "uv test", "Uv",
+    ])
+    def test_uv_satisfies(self, rule, tool_name):
+        edit = ToolCall(tool="edit", args={"path": "src/main.py"})
+        rule.check(edit)
+        uv = ToolCall(tool=tool_name, args={"command": "pytest"})
+        result = rule.check(uv)
+        assert result.action == Action.ALLOW
+        assert rule.has_pending is False  # suggestion cleared
+
 
 class TestSoftNudge:
 

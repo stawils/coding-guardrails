@@ -19,7 +19,7 @@ import json
 from collections import deque
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 
 # Tool name aliases — functional equivalents that should be grouped for loop detection.
@@ -30,6 +30,7 @@ _TOOL_ALIASES: dict[str, str] = {
     "command": "bash",
     "sh": "bash",
     "create": "write",
+    "View": "read",
 }
 
 

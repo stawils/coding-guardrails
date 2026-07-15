@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 463 tests, ~2s
+pytest tests/unit/ -q          # 538 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -17,7 +17,7 @@ Two-layer proxy between agent and LLM:
 ```
 Agent → :8081 (our proxy)
           ├── Layer 1: Forge (rescue, validate, retry, thinking capture)
-          ├── Layer 2: Coding Guardrails (12 rules)
+          ├── Layer 2: Coding Guardrails (13 rules)
           └── → :8080 (llama-server / LLM backend)
 ```
 
@@ -27,7 +27,7 @@ Agent → :8081 (our proxy)
 2. **Preprocessing**: empty user messages fixed, stale assistant text stripped
 3. **Tool enforcement**: for real coding agents (bash/read/edit/write tools), inject guidance
 4. **Layer 1 (Forge)**: run inference with rescue + retry + thinking capture
-5. **Layer 2 (Guardrails)**: check tool calls against 12 rules
+5. **Layer 2 (Guardrails)**: check tool calls against 13 rules
 6. **Response**: blocked calls return text nudge to agent; allowed calls pass through
 7. **Acceptance shaping**: if the model emits an acceptance-report as bare JSON (the F9 prefill makes it emit JSON, but local models drop the fence), the text response is wrapped in the ` ```acceptance-report ` fence Pi's runtime requires; the contract's real criterion id is seeded into the prefill so reports match contracts
 
@@ -60,6 +60,7 @@ Agent → :8081 (our proxy)
 | `thoroughness` | nudge | Premature terminal submission |
 | `sequencing` | nudge | Test-after-change |
 | `tool_resolution` | nudge | Empty/error results |
+| `lint` | nudge/block | Lint edited files (`ruff`) — noticing offload for local models |
 
 ## Production Rules
 
@@ -208,11 +209,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 463 tests
+pytest tests/unit/ -q              # All 538 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 463 tests must pass before committing.
+All 538 tests must pass before committing.
 
 ## Eval
 
@@ -237,7 +238,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 463 unit tests must pass
+- All 538 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -268,7 +269,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 463 tests MUST pass
+pytest tests/unit/ -q          # All 538 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

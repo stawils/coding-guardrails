@@ -12,7 +12,7 @@ import hashlib
 import os.path
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 
 def _tool_matches(tool: str, prefixes: tuple[str, ...]) -> bool:

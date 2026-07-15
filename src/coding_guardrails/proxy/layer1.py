@@ -127,7 +127,6 @@ async def run_inference_instrumented(
     every decision point gets a log statement so operators can see exactly what
     Forge is doing inside the loop.
     """
-    from forge.clients.base import ChunkType, StreamChunk
 
     api_format = getattr(client, "api_format", "ollama")
     new_messages: list[Message] = []
@@ -247,13 +246,6 @@ async def run_inference_instrumented(
         # accept it, retrying further is unlikely to help.
         if isinstance(response, TextResponse):
             content = response.content.strip()
-            has_tool_history = any(
-                m.metadata and m.metadata.type in (
-                    MessageType.TOOL_CALL,
-                    MessageType.TOOL_RESULT,
-                )
-                for m in messages
-            )
             first_attempt_text_ok = attempts == 1
             retry_text_ok = attempts > 1
 
@@ -391,7 +383,7 @@ async def _send_streaming(
     sampling: dict[str, Any] | None = None,
 ) -> LLMResponse:
     """Send via streaming, forwarding chunks to on_chunk callback."""
-    from forge.clients.base import ChunkType, StreamChunk
+    from forge.clients.base import ChunkType
 
     response = None
     async for chunk in client.send_stream(api_messages, tools=tool_specs, sampling=sampling):

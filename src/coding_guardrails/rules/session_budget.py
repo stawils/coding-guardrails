@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 from coding_guardrails.rules.prerequisites import _tool_matches
 
 _WRITE_TOOLS = ("edit", "write", "create")

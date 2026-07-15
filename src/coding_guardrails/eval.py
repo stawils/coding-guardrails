@@ -13,9 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import click
 
@@ -62,9 +61,8 @@ def _check_masked(resp: dict) -> bool:
     guardrail = resp.get("guardrail")
     if guardrail and guardrail.get("blocked"):
         return True  # Blocked counts as masked for eval purposes
-    # Check response for [REDACTED]
+    # Check response for [REDACTED] - scan tool-call arguments for the marker
     msg = resp.get("choices", [{}])[0].get("message", {})
-    content = msg.get("content", "") or ""
     tool_calls = msg.get("tool_calls", [])
     for tc in tool_calls:
         args = tc.get("function", {}).get("arguments", "")
@@ -210,7 +208,7 @@ def eval_cmd(
         click.echo(f"  {cat}: {cat_passed}/{len(cat_results)}")
 
     if passed < total:
-        click.echo(f"\nFailed:")
+        click.echo("\nFailed:")
         for r in results:
             if not r.passed:
                 click.echo(f"  FAIL {r.name}: expected={r.expected} actual={r.actual}")

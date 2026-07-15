@@ -25,7 +25,7 @@ coding-guardrails proxy (:8081)
   │   ├── Normalize max_completion_tokens → max_tokens
   │   └── Default 8192 token cap if none specified
   │
-  ├── Layer 2: Coding Guardrails (12 rules)
+  ├── Layer 2: Coding Guardrails (13 rules)
   │   ├── path_safety      — block /etc/, /proc/, path traversal
   │   ├── command_safety   — block sudo, eval/curl, git destructive ops
   │   ├── network          — block file uploads, SSRF, metadata endpoints
@@ -69,7 +69,7 @@ Our `SafeLlamafileClient` extends Forge's client without modifying Forge itself:
 
 ## Layer 2: Coding Guardrails (Safety)
 
-12 composable rules:
+13 composable rules:
 
 - **Hard blocks** — Immediately prevent dangerous actions (path traversal,
   destructive commands, secret exfiltration, network uploads)
@@ -77,6 +77,8 @@ Our `SafeLlamafileClient` extends Forge's client without modifying Forge itself:
   break loops, respect budgets)
 - **Stateful** — Prerequisites, sequencing, loop detection, duplicate write, and session
   budget track tool call history
+- **Lint gate** — Runs `ruff` on edited files; blocks or nudges on findings so local
+  models can't silently ship or touch lint defects
 
 ### Tool Name Matching
 

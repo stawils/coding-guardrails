@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import ClassVar
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 
 
 @dataclass

@@ -83,6 +83,17 @@ class TestToolNames:
         result = rule.check(call)
         assert result.action == Action.NUDGE
 
+    def test_view_alias_normalized_to_read(self):
+        """Claude Code's 'View' tool should normalize to 'read'."""
+        rule = LoopDetectionRule(nudge_threshold=2)
+        result = rule.check(ToolCall(tool="View", args={"path": "file.txt"}))
+        assert result.action == Action.ALLOW
+        # Verify normalization works via the helper directly
+        from coding_guardrails.rules.loop_detection import _normalize_tool
+        assert _normalize_tool("View") == "read"
+        # Unknown names are returned unchanged
+        assert _normalize_tool("UnknownTool") == "UnknownTool"
+
 
 class TestEdgeCases:
 

@@ -13,7 +13,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import Action, RuleResult, ToolCall
+from coding_guardrails.rules.base import RuleResult, ToolCall
 from coding_guardrails.rules.prerequisites import _tool_matches
 
 # Tool prefixes that write files.

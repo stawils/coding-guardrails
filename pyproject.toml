@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coding-guardrails"
-version = "0.12.2"
+version = "0.13.0"
 description = "Safe, reliable local coding agent proxy. Forge (rescue, retry, thinking capture) + 12 composable guardrail rules. 93% on Forge eval."
 requires-python = ">=3.12"
 license = "MIT"

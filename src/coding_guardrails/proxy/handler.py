@@ -29,7 +29,7 @@ from forge.proxy.convert import (
     text_response_to_openai,
     text_to_sse_events,
 )
-from forge.tools.respond import RESPOND_TOOL_NAME, respond_spec
+from forge.tools.respond import RESPOND_TOOL_NAME
 
 from coding_guardrails.middleware import CodingGuardrails
 from coding_guardrails.proxy.acceptance import wrap_bare_acceptance_report
@@ -229,7 +229,8 @@ async def handle_chat_completions(
         enforcement = (
             "When working on a task, respond by calling tools (bash, read, edit, write). "
             "When the task is COMPLETE and you have nothing left to do, respond with plain text summarizing what was done. "
-            "Do NOT call unnecessary tools just to have a tool call. If unsure, call bash with 'echo ready'."
+            "Do NOT call unnecessary tools just to have a tool call. If unsure, call bash with 'echo ready'. "
+            "Before finishing, run the project's linter (e.g. ruff check) on every file you touched; apply only the trivial single-line fixes it reports (unused import, extraneous f-prefix) and note anything larger rather than silently applying it."
         )
         if openai_messages:
             first = openai_messages[0]
@@ -333,7 +334,7 @@ async def handle_chat_completions(
         # Convert respond() to text — most agents (Pi, Cline, etc.)
         # don't have a respond tool. The model is saying "I'm done."
         msg = respond_calls[0].args.get("message", respond_calls[0].args.get("answer", ""))
-        attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
+        attempts_tag = "[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
         logger.info("L1 done %s (%s, respond -> text: %s)",
                     attempts_tag, _fmt_elapsed(elapsed_l1), _short(msg, 60))
         if is_stream:
@@ -346,7 +347,7 @@ async def handle_chat_completions(
             return text_to_sse_events("", model=model_name)
         return text_response_to_openai("", model=model_name)
 
-    attempts_tag = f"[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
+    attempts_tag = "[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
     logger.info("L1 done %s (%s, %d tool calls: %s)",
                 attempts_tag, _fmt_elapsed(elapsed_l1), len(other_calls), _fmt_tools(other_calls))
 

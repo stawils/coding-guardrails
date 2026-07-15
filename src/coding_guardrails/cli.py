@@ -354,7 +354,6 @@ def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
 def _down() -> None:
     """Stop the managed proxy + unload the GPU backend (clean: VRAM freed, no orphans)."""
     import os
-    import signal
     import time
 
     from coding_guardrails.server import launcher

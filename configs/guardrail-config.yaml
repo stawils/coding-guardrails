@@ -80,3 +80,14 @@ session_budget:
   max_commands: 500    # 200 was too low — model uses sed/head/awk to inspect
   max_reads: 0         # unlimited reads (model must read before editing)
   warn_at: 0.85
+
+lint:
+  enabled: true
+  # Workspace for resolving relative edit paths (also the sandbox boundary).
+  # Config-less deployments can set $CG_LINT_WORKSPACE instead. "." = proxy cwd.
+  workspace: "."
+  # "nudge" = advisory (logged); "block" = hold the edit until the file is clean.
+  # Pi-streamed agents only heed "block" (their nudges are silently logged).
+  # Config-less deployments can set $CG_LINT_MODE instead.
+  mode: nudge
+  timeout: 10.0
