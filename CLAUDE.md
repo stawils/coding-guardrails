@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 538 tests, ~2s
+pytest tests/unit/ -q          # 546 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -60,7 +60,7 @@ Agent → :8081 (our proxy)
 | `thoroughness` | nudge | Premature terminal submission |
 | `sequencing` | nudge | Test-after-change |
 | `tool_resolution` | nudge | Empty/error results |
-| `lint` | nudge/block | Lint edited files (`ruff`) — noticing offload for local models |
+| `lint` | nudge/block | Multi-language lint on edits (ruff/biome/gofmt) — noticing offload |
 
 ## Production Rules
 
@@ -209,11 +209,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 538 tests
+pytest tests/unit/ -q              # All 546 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 538 tests must pass before committing.
+All 546 tests must pass before committing.
 
 ## Eval
 
@@ -238,7 +238,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 538 unit tests must pass
+- All 546 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -269,7 +269,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 538 tests MUST pass
+pytest tests/unit/ -q          # All 546 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

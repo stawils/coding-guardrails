@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 
 from coding_guardrails.rules.base import Action, ToolCall
-from coding_guardrails.rules.lint import LintRule, workspace_from_env
+from coding_guardrails.rules.lint import LinterSpec, LintRule, default_linters, workspace_from_env
 
 
 def _call(tool: str = "edit", **args) -> ToolCall:
@@ -149,7 +149,7 @@ class TestFindings:
         assert result.action == Action.BLOCK
         assert "held" in (result.nudge or "")
         assert "F401" in (result.nudge or "")
-        assert result.reason == "lint findings"
+        assert result.reason.endswith("lint findings")
 
     def test_findings_other_path_args(self, monkeypatch, tmp_path):
         """file_path / file arg names are recognized."""
@@ -212,3 +212,124 @@ class TestWorkspaceEnv:
     def test_nothing_returns_none(self, monkeypatch):
         monkeypatch.delenv("CG_LINT_WORKSPACE", raising=False)
         assert workspace_from_env(None) is None
+
+
+class TestLanguageSelection:
+    def _capture(self, records, *, returncode: int = 0, stdout: str = ""):
+        def _fake(cmd, **kwargs):
+            records.append((cmd, kwargs.get("cwd")))
+            return subprocess.CompletedProcess(args=cmd, returncode=returncode, stdout=stdout, stderr="")
+        return _fake
+
+    def test_go_file_gofmt_stdout_mode(self, monkeypatch, tmp_path):
+        # gofmt -l always exits 0 but lists unformatted files on stdout
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture(records, returncode=0, stdout="main.go"),
+        )
+        (tmp_path / "main.go").write_text("x")
+        rule = LintRule(workspace=str(tmp_path), mode="nudge")
+        result = rule.check(_call("edit", path="main.go"))
+        assert result.action == Action.NUDGE
+        assert "Go" in (result.nudge or "")
+        assert records and records[0][0][0] == "gofmt"
+
+    def test_go_file_clean_allowed(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture([], returncode=0, stdout=""),
+        )
+        (tmp_path / "main.go").write_text("x")
+        assert LintRule(workspace=str(tmp_path)).check(_call("edit", path="main.go")).action == Action.ALLOW
+
+    def test_typescript_uses_biome(self, monkeypatch, tmp_path):
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture(records, returncode=1, stdout="a.ts:1:1 lint/suspicious"),
+        )
+        (tmp_path / "a.ts").write_text("x")
+        result = LintRule(workspace=str(tmp_path), mode="nudge").check(_call("edit", path="a.ts"))
+        assert result.action == Action.NUDGE
+        assert records[0][0][0] == "biome"
+
+    def test_unknown_extension_skipped(self, monkeypatch, tmp_path):
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run", self._capture(records),
+        )
+        (tmp_path / "README.md").write_text("x")
+        rule = LintRule(workspace=str(tmp_path), mode="block")
+        assert rule.check(_call("edit", path="README.md")).action == Action.ALLOW
+        assert records == []
+
+    def test_default_linters_cover_py_js_ts_go(self):
+        exts = set()
+        for spec in default_linters():
+            exts.update(spec.extensions)
+        for e in (".py", ".js", ".jsx", ".ts", ".tsx", ".go"):
+            assert e in exts
+
+
+class TestProjectMode:
+    def _capture(self, records, *, returncode: int = 0, stdout: str = ""):
+        def _fake(cmd, **kwargs):
+            records.append((cmd, kwargs.get("cwd")))
+            return subprocess.CompletedProcess(args=cmd, returncode=returncode, stdout=stdout, stderr="")
+        return _fake
+
+    def test_project_mode_without_workspace_skipped(self, monkeypatch, tmp_path):
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture(records, returncode=1, stdout="warn"),
+        )
+        f = tmp_path / "lib.rs"
+        f.write_text("x")
+        rule = LintRule(workspace=None, mode="block", linters=(
+            LinterSpec("Rust", (".rs",), ("cargo", "clippy"), path_mode="project"),
+        ))
+        assert rule.check(_call("edit", path=str(f))).action == Action.ALLOW
+        assert records == []
+
+    def test_project_mode_runs_in_workspace_cwd(self, monkeypatch, tmp_path):
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture(records, returncode=1, stdout="warn"),
+        )
+        (tmp_path / "lib.rs").write_text("x")
+        rule = LintRule(workspace=str(tmp_path), mode="block", linters=(
+            LinterSpec("Rust", (".rs",), ("cargo", "clippy"), path_mode="project"),
+        ))
+        result = rule.check(_call("edit", path="lib.rs"))
+        assert result.action == Action.BLOCK
+        assert records and records[0][0] == ["cargo", "clippy"]  # no path appended
+        assert records[0][1] == str(tmp_path)  # cwd = workspace
+
+
+class TestCustomLinters:
+    def _capture(self, records, *, returncode: int = 0, stdout: str = ""):
+        def _fake(cmd, **kwargs):
+            records.append(cmd)
+            return subprocess.CompletedProcess(args=cmd, returncode=returncode, stdout=stdout, stderr="")
+        return _fake
+
+    def test_custom_linters_replace_defaults(self, monkeypatch, tmp_path):
+        records: list = []
+        monkeypatch.setattr(
+            "coding_guardrails.rules.lint.subprocess.run",
+            self._capture(records, returncode=1, stdout="x"),
+        )
+        (tmp_path / "a.py").write_text("x")
+        rule = LintRule(workspace=str(tmp_path), linters=(
+            LinterSpec("Ruby", (".rb",), ("rubocop", "-f", "compact")),
+        ))
+        # .py no longer matched (defaults replaced) → allowed, linter not called
+        assert rule.check(_call("edit", path="a.py")).action == Action.ALLOW
+        assert records == []
+        # .rb matched by the custom spec
+        (tmp_path / "b.rb").write_text("x")
+        assert rule.check(_call("edit", path="b.rb")).action == Action.NUDGE
+        assert records[0][0] == "rubocop"

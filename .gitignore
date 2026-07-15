@@ -42,5 +42,6 @@ plans/
 research/
 eval/
 .pi/
+.pi-subagents/
 patches/pi-subagents/.patch
 BACKLOG.md

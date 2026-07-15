@@ -26,7 +26,7 @@ from coding_guardrails.rules.path_safety import PathSafetyRule
 from coding_guardrails.rules.prerequisites import PrerequisiteRule
 from coding_guardrails.rules.secrets import SecretRule
 from coding_guardrails.rules.dup_write import DuplicateWriteRule
-from coding_guardrails.rules.lint import LintRule, workspace_from_env
+from coding_guardrails.rules.lint import LinterSpec, LintRule, default_linters, workspace_from_env
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
@@ -227,13 +227,30 @@ class CodingGuardrails:
 
         # Lint gate — run the project linter on edited files (noticing offload).
         # workspace/mode fall back to $CG_LINT_WORKSPACE / $CG_LINT_MODE so the
-        # rule can be enabled for a config-less deployment via env vars.
+        # rule can be enabled for a config-less deployment via env vars. ``linters``
+        # maps file extensions to language linters (defaults: ruff/biome/gofmt).
         lint_cfg = config.get("lint", {})
         if lint_cfg.get("enabled", True):
+            linters_cfg = lint_cfg.get("linters")
+            if linters_cfg:
+                linters = tuple(
+                    LinterSpec(
+                        name=lc.get("name", "custom"),
+                        extensions=tuple(lc.get("extensions", ())),
+                        command=tuple(lc.get("command", ())),
+                        path_mode=lc.get("path_mode", "file"),
+                        findings_mode=lc.get("findings_mode", "exitcode"),
+                        enabled=lc.get("enabled", True),
+                    )
+                    for lc in linters_cfg
+                )
+            else:
+                linters = default_linters()
             rules["lint"] = LintRule(
                 workspace=workspace_from_env(lint_cfg.get("workspace")),
                 mode=lint_cfg.get("mode", os.environ.get("CG_LINT_MODE", "nudge")),
                 timeout=lint_cfg.get("timeout", 10.0),
+                linters=linters,
             )
 
         return cls(**rules)

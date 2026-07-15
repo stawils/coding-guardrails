@@ -91,3 +91,24 @@ lint:
   # Config-less deployments can set $CG_LINT_MODE instead.
   mode: nudge
   timeout: 10.0
+  # Per-language linters. Defaults (shown commented) cover Python/JS-TS/Go with fast,
+  # file-level tools; missing binaries are skipped gracefully. Override or extend.
+  # findings_mode: "exitcode" (non-zero exit = findings) | "stdout" (non-empty stdout
+  #   = findings, e.g. `gofmt -l` which always exits 0).
+  # path_mode: "file" (append the file) | "dir" (append its parent) | "project"
+  #   (run in workspace root, no path — for `cargo clippy`/`golangci-lint`).
+  # linters:
+  #   - name: Python
+  #     extensions: [".py"]
+  #     command: ["ruff", "check", "--select=F,E9", "--output-format=concise"]
+  #   - name: JavaScript/TypeScript
+  #     extensions: [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"]
+  #     command: ["biome", "check"]
+  #   - name: Go
+  #     extensions: [".go"]
+  #     command: ["gofmt", "-l"]
+  #     findings_mode: stdout
+  #   - name: Rust
+  #     extensions: [".rs"]
+  #     command: ["cargo", "clippy", "--", "--no-deps", "-q"]
+  #     path_mode: project

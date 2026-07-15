@@ -1,21 +1,28 @@
-"""Lint gate — run the project linter on files the agent edits.
+"""Lint gate — run the right linter on files the agent edits, any language.
 
 Noticing pre-existing lint defects is unreliable for small local models: they clean
 their *own* output but read past pre-existing nits in files they only partially edit
 (verified 2026-07-15 on Qwen3.5-9B). This rule offloads noticing to a deterministic
-tool — when the agent edits/writes a file, run ``ruff check`` on it and surface findings.
+tool — when the agent edits/writes a file, run that language's linter and surface findings.
+
+Each file extension maps to a linter (``LinterSpec``). Defaults cover the most common
+languages with fast, file-level tools:
+
+- Python (``.py``)        → ``ruff check --select=F,E9``  (defects; non-zero exit = findings)
+- JS/TS (``.js .ts ...``) → ``biome check``               (defects; non-zero exit = findings)
+- Go (``.go``)            → ``gofmt -l``                  (formatting; non-empty stdout = findings)
+
+Linters that aren't installed are skipped (the call is allowed). Project-scoped linters
+(e.g. ``cargo clippy``, ``golangci-lint``) can be added via config with ``path_mode:
+project``. The full set is configurable in guardrail-config.yaml.
 
 Modes:
-- ``nudge`` (default): advisory — the call proceeds, findings are logged. Visible in
-  Forge/eval runners that inject nudges.
-- ``block``: the edit is held and the findings returned as a text nudge. This is the
-  ONLY mode that reliably changes behavior for Pi-streamed agents, whose nudges are
-  otherwise silently logged. The held-edit nudge preserves intent and tells the agent
-  how to clean the file, then redo the edit.
+- ``nudge`` (default): advisory — the call proceeds, findings are logged.
+- ``block``: the edit is held and findings returned as text (the only mode Pi-streamed
+  agents heed, since their nudges are otherwise silently logged).
 
-Path resolution is sandboxed: relative paths resolve against ``workspace`` and must
-stay inside it. If no workspace is configured, relative paths are skipped (the rule
-cannot resolve them safely from the proxy's cwd).
+Path resolution is sandboxed: relative paths resolve against ``workspace`` and must stay
+inside it; with no workspace, relative paths are skipped.
 """
 
 from __future__ import annotations
@@ -40,17 +47,70 @@ def _tool_matches(tool: str, prefixes: tuple[str, ...]) -> bool:
 
 
 @dataclass
+class LinterSpec:
+    """One linter for a set of file extensions.
+
+    Attributes:
+        name: Human-readable label (Python, Go, ...).
+        extensions: File extensions this linter handles, lowercase (e.g. (".py",)).
+        command: Linter argv prefix; the target is appended per ``path_mode``.
+        path_mode: "file" (append the file path), "dir" (append its parent directory),
+            "project" (run in the workspace root with no path appended — for tools like
+            ``cargo clippy`` that operate on a manifest, not a single file).
+        findings_mode: How findings are detected. "exitcode" (default) — a non-zero exit
+            code means findings, reported via stdout. "stdout" — any non-empty stdout
+            means findings regardless of exit code (e.g. ``gofmt -l`` always exits 0 but
+            lists unformatted files).
+        enabled: If False, this spec is skipped during selection.
+    """
+
+    name: str
+    extensions: tuple[str, ...]
+    command: tuple[str, ...]
+    path_mode: str = "file"
+    findings_mode: str = "exitcode"
+    enabled: bool = True
+
+
+def default_linters() -> tuple[LinterSpec, ...]:
+    """Fast, file-level linters for the most common languages.
+
+    Each degrades gracefully: if the binary isn't on PATH, the file is allowed.
+    Override or extend via the ``lint.linters`` config section.
+    """
+    return (
+        LinterSpec(
+            "Python",
+            (".py",),
+            ("ruff", "check", "--select=F,E9", "--output-format=concise"),
+        ),
+        LinterSpec(
+            "JavaScript/TypeScript",
+            (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"),
+            ("biome", "check"),
+        ),
+        LinterSpec(
+            "Go",
+            (".go",),
+            ("gofmt", "-l"),
+            findings_mode="stdout",
+        ),
+    )
+
+
+@dataclass
 class LintRule:
-    """Run a linter on files the agent edits; surface findings.
+    """Run the matching language linter on files the agent edits; surface findings.
 
     Attributes:
         edit_tools: Tool-name prefixes that trigger a lint check.
         path_args: Argument names tried, in order, for the target file path.
-        workspace: Root directory for resolving relative paths and the sandbox
-            boundary. If None, relative paths are skipped.
+        workspace: Root directory for resolving relative paths, the sandbox boundary,
+            and the cwd for ``path_mode: project`` linters. If None, relative paths and
+            project-mode linters are skipped.
         mode: "nudge" (advisory) or "block" (hold the edit until the file is clean).
-        timeout: Max seconds for the linter subprocess.
-        command: Linter command prefix; the resolved path is appended as the last arg.
+        timeout: Max seconds for a linter subprocess.
+        linters: Ordered specs; the first whose extensions contain the file's suffix wins.
     """
 
     edit_tools: tuple[str, ...] = _DEFAULT_EDIT_TOOLS
@@ -58,7 +118,7 @@ class LintRule:
     workspace: str | None = None
     mode: str = "nudge"
     timeout: float = 10.0
-    command: tuple[str, ...] = field(default_factory=lambda: ("ruff", "check", "--select=F,E9", "--output-format=concise"))
+    linters: tuple[LinterSpec, ...] = field(default_factory=default_linters)
 
     @property
     def name(self) -> str:
@@ -95,26 +155,45 @@ class LintRule:
                 return None  # escapes workspace sandbox — skip
         return p
 
-    # --- linter --------------------------------------------------------
+    # --- linter selection + execution ---------------------------------
 
-    def _run_linter(self, target: Path) -> str:
-        """Run the linter on target; return its stdout (empty if clean/unavailable)."""
-        cmd = [*self.command, str(target)]
+    def _select(self, target: Path) -> LinterSpec | None:
+        suffix = target.suffix.lower()
+        for spec in self.linters:
+            if spec.enabled and suffix in spec.extensions:
+                return spec
+        return None
+
+    def _run(self, spec: LinterSpec, target: Path) -> str:
+        """Run the linter; return its findings text (empty if clean/unavailable)."""
+        cwd: str | None = None
+        if spec.path_mode == "project":
+            if not self.workspace:
+                return ""  # no project root to run in
+            cmd = list(spec.command)
+            cwd = self.workspace
+        elif spec.path_mode == "dir":
+            cmd = [*spec.command, str(target.parent)]
+        else:  # file
+            cmd = [*spec.command, str(target)]
+
         try:
             proc = subprocess.run(
                 cmd, capture_output=True, text=True,
-                timeout=self.timeout, check=False,
+                timeout=self.timeout, check=False, cwd=cwd,
             )
         except FileNotFoundError:
-            logger.debug("lint: %s not installed — skipping", self.command[0])
+            logger.debug("lint: %s not installed — skipping %s", spec.command[0], spec.name)
             return ""
         except subprocess.TimeoutExpired:
-            logger.warning("lint: timed out after %ss on %s", self.timeout, target)
+            logger.warning("lint: %s timed out after %ss on %s", spec.name, self.timeout, target)
             return ""
-        # ruff: 0 = clean, 1 = findings, >1 = internal error.
-        if proc.returncode == 0:
-            return ""
-        return (proc.stdout or "").strip()
+
+        stdout = (proc.stdout or "").strip()
+        if spec.findings_mode == "stdout":
+            return stdout  # gofmt -l style: non-empty stdout == findings
+        # exitcode mode: findings iff non-zero exit (guard against empty stdout on errors)
+        return stdout if proc.returncode != 0 else ""
 
     # --- rule API ------------------------------------------------------
 
@@ -130,7 +209,11 @@ class LintRule:
         if target is None or not target.is_file():
             return RuleResult.allow(call.tool)
 
-        findings = self._run_linter(target)
+        spec = self._select(target)
+        if spec is None:
+            return RuleResult.allow(call.tool)  # no linter for this file type
+
+        findings = self._run(spec, target)
         if not findings:
             return RuleResult.allow(call.tool)
 
@@ -139,12 +222,12 @@ class LintRule:
 
         if self.mode == "block":
             nudge = (
-                f"Lint findings in {rel} (your edit is held). Clean the file, e.g. "
-                f"`ruff check --fix {rel}`, then re-issue your edit.\n\n{preview}"
+                f"{spec.name} lint findings in {rel} (your edit is held). "
+                f"Clean the file, then re-issue your edit.\n\n{preview}"
             )
-            return RuleResult.block(call.tool, nudge=nudge, reason="lint findings")
+            return RuleResult.block(call.tool, nudge=nudge, reason=f"{spec.name} lint findings")
 
-        nudge = f"Lint findings in {rel} (not auto-applied): consider `ruff --fix`.\n\n{preview}"
+        nudge = f"{spec.name} lint findings in {rel} (not auto-applied):\n\n{preview}"
         return RuleResult.nudge(call.tool, message=nudge)
 
     def record(self, calls: list[ToolCall]) -> None:

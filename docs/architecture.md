@@ -77,8 +77,9 @@ Our `SafeLlamafileClient` extends Forge's client without modifying Forge itself:
   break loops, respect budgets)
 - **Stateful** — Prerequisites, sequencing, loop detection, duplicate write, and session
   budget track tool call history
-- **Lint gate** — Runs `ruff` on edited files; blocks or nudges on findings so local
-  models can't silently ship or touch lint defects
+- **Lint gate** — Runs the right linter per language (ruff/biome/gofmt) on edited
+  files; blocks or nudges on findings so local models can't silently ship or touch
+  lint defects
 
 ### Tool Name Matching
 
