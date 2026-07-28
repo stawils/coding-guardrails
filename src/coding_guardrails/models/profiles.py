@@ -39,8 +39,8 @@ PROFILES: dict[str, ModelProfile] = {
         family="Gemma4",
         quant="UD-Q4_K_XL (QAT)",
         file_size_gb=14.25,
-        vram_required_gb=19.8,
-        context_tokens=200000,
+        vram_required_gb=15.0,  # 16K ctx: 14.25 weights + ~0.5GB KV (MoE sliding-window) — fits 24GB shared GPU
+        context_tokens=16384,
         architecture="moe",
         active_params_b=3.8,
         swe_bench_verified=None,
@@ -69,14 +69,22 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
     # ── Qwen3.5-9B (Dense, 9B params, 200K ctx, MTP) ──
-    # Fastest option with proven tool-use reliability. 18 GB VRAM with MTP.
-    # Boot: llama-server with --spec-type draft-mtp for ~1.5-2x speedup.
+    # Fastest option with proven tool-use reliability. Boot: llama-server with
+    # --spec-type draft-mtp for ~1.5-2x speedup.
+    # MEASURED 2026-07-17: actual footprint at 200K ctx (with MTP) ≈ 13-15.3 GB
+    # (hybrid 3:1 linear:full attention → only ~1/4 of layers hold growing KV, so
+    # the 200K KV cache stays small). The old 18.1 GB gate was ~3 GB over-
+    # conservative and deadlocked on the shared 24 GB card whenever the agent's
+    # embedding model (embeddinggemma, ~0.9 GB) was also loaded — every turn needs
+    # both. Gate lowered to 16.5 GB (measured + ~1.2 GB margin): coexists with the
+    # embedding model, no context cut, no KV-quant change. Re-raise if real peak
+    # usage during long agentic turns is observed above ~16 GB.
     "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
         name="Qwen3.5-9B-UD-Q4_K_XL",
         family="Qwen3.5",
         quant="UD-Q4_K_XL (MTP)",
         file_size_gb=5.7,
-        vram_required_gb=18.1,
+        vram_required_gb=16.5,
         context_tokens=200000,
         architecture="dense",
         active_params_b=9.0,
