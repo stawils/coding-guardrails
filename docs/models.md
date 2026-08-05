@@ -10,6 +10,25 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Qwen3.5-9B** ⭐ | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
+| **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
+
+## LFM2.5-2.6B (BF16 — maximum precision, 128K context)
+
+- Liquid AI LFM2.5, agentic post-trained. **2.69B params, native 131072 (128K) context**.
+- **Official BF16 GGUF** (`LiquidAI/LFM2.5-2.6B-GGUF`) — no quantization, max precision.
+- Hybrid architecture: 22 double-gated short-conv blocks + 8 GQA attention layers. Only 8 layers
+  hold KV, so the 128K cache is tiny (~2 GB f16) — ~9 GB total VRAM, huge headroom on 24 GB.
+- **Pure reasoning model** — always thinks before answering (`<think>` in the chat template).
+- Tool use via llama.cpp `--jinja` (Pythonic `<|tool_call_start|>`…`<|tool_call_end|>` format).
+- Card sampling: temp 0.1, top_k 50, rep_penalty 1.1 (baked into boot flags).
+- ⚠️ **Card explicitly says NOT recommended for agentic coding / knowledge-heavy tasks** —
+  **measured 2026-08-05 (Forge eval, proxy mode): 138/150 completion (92%), 100/140 correctness (71%)**
+  vs Qwen3.5-9B's 140/150 (93%) / 132/140 (94%). Completion near parity and ~1.9× faster, but
+  **-23pp correctness**, concentrated in data-heavy scenarios (`data_gap_recovery_extended`,
+  `argument_transformation`, `inconsistent_api_recovery`, `grounded_synthesis` — all 0/10) and
+  terminal-tool commitment (`tool_selection` 0/10). Full analysis:
+  [reports/../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md](../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md).
+- License: LFM Open License v1.0. No MTP.
 
 ## Qwen3.5-9B (Default) ⭐
 
@@ -81,6 +100,16 @@ llama-server \
   --jinja --flash-attn auto \
   --port 8080 -c 200000 \
   --temp 0.6 --top-p 0.95 --top-k 20 -np 1
+```
+
+### LFM2.5-2.6B (128K context, max precision)
+
+```bash
+llama-server \
+  -m LFM2.5-2.6B-BF16.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 128000 \
+  --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1
 ```
 
 > **Notes:** No `--spec-type draft-mtp` — the official Ornith GGUF has no MTP tensors.

@@ -68,6 +68,31 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 0.6, "top_k": 20, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
+    # ── LFM2.5-2.6B (Dense hybrid, 2.6B params, 128K ctx, BF16) ──
+    # Liquid AI LFM2.5 — agentic post-trained (RL inside agentic harnesses).
+    # Hybrid arch: 22 double-gated short-conv blocks + 8 GQA attention layers.
+    # Official BF16 GGUF — maximum precision, zero quantization (~5.4 GB).
+    # Context: GGUF train ctx is 128000 (llama-server warns/caps above that) —
+    # 128000 is the max usable ctx; 8 GQA layers hold KV, so the 128K KV cache
+    # is tiny (~2 GB at f16) — fits 24 GB easily.
+    # Card: "pure reasoning model" (always thinks), tool-use via llama.cpp jinja.
+    # Card explicitly says NOT recommended for agentic coding / knowledge-heavy
+    # tasks — validated as a worker before trusting (see docs/models.md).
+    # No MTP. Sampling from the model card: temp 0.1, top_k 50, rep_penalty 1.1.
+    "LFM2.5-2.6B-BF16": ModelProfile(
+        name="LFM2.5-2.6B-BF16",
+        family="LFM2.5",
+        quant="BF16",
+        file_size_gb=5.4,
+        vram_required_gb=9.0,  # 5.0 weights + ~2 GB KV @128K f16 + buffers
+        context_tokens=128000,
+        architecture="dense",
+        active_params_b=2.6,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.1, "top_k": 50, "repeat_penalty": 1.1},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1",
+                     "--temp", "0.1", "--top-k", "50", "--repeat-penalty", "1.1"],
+    ),
     # ── Qwen3.5-9B (Dense, 9B params, 200K ctx, MTP) ──
     # Fastest option with proven tool-use reliability. Boot: llama-server with
     # --spec-type draft-mtp for ~1.5-2x speedup.

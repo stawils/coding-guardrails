@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 546 tests, ~2s
+pytest tests/unit/ -q          # 547 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -180,6 +180,14 @@ $LLAMA \
 coding-guardrails server start -m Ornith-1.0-9B-Q8_0 --ctx 200000
 #   (equivalent raw llama-server: --temp 0.6 --top-p 0.95 --top-k 20 -np 1, NO --spec-type draft-mtp)
 
+# LFM2.5-2.6B BF16 (128K ctx, ~9 GB VRAM — max precision, ~114 tok/s)
+#   Liquid AI edge model, lfm2 arch, pure reasoning model. NO MTP tensors.
+#   Measured 2026-08-05 Forge eval (proxy mode): 138/150 completion (92%),
+#   100/140 correctness (71%) vs Qwen3.5-9B 93%/94% — the card's "not recommended
+#   for agentic coding / knowledge-heavy tasks" held up. Fine for bounded/structured tasks.
+coding-guardrails server start -m LFM2.5-2.6B-BF16
+#   (equivalent raw llama-server: --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1)
+
 # Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate
 coding-guardrails serve \
@@ -195,7 +203,7 @@ coding-guardrails serve \
 
 ### Notes
 
-- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). Rebuilt 2026-07-03 to latest master (commit `fdb1db877`, build 9860) — supports Qwen3.5-MTP, Qwen3.6-27B (qwen3next arch / `ssm_conv1d`), Gemma 4, Ornith. Build config: `GGML_CUDA=ON`, `LLAMA_CURL=ON`, Release. NCCL disabled (single-GPU). Stale `llama-server.bak.8276` kept as backup.
+- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). Rebuilt 2026-07-03 to latest master (commit `fdb1db877`, build 9860) — supports Qwen3.5-MTP, Qwen3.6-27B (qwen3next arch / `ssm_conv1d`), Gemma 4, Ornith, LFM2.5 (`lfm2` arch). Build config: `GGML_CUDA=ON`, `LLAMA_CURL=ON`, Release. NCCL disabled (single-GPU). Stale `llama-server.bak.8276` kept as backup.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
 - Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
@@ -209,11 +217,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 546 tests
+pytest tests/unit/ -q              # All 547 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 546 tests must pass before committing.
+All 547 tests must pass before committing.
 
 ## Eval
 
@@ -238,7 +246,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 546 unit tests must pass
+- All 547 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -269,7 +277,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 546 tests MUST pass
+pytest tests/unit/ -q          # All 547 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.
