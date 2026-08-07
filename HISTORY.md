@@ -1,5 +1,20 @@
 # Session History
 
+## 2026-08-07 — Qwen3.6-27B added (max-ctx profile, 48K q8_0 KV)
+- Downloaded Qwen3.6-27B-UD-Q4_K_XL (17.9 GB, unsloth/Qwen3.6-27B-MTP-GGUF) into cg cache
+- Empirical max-ctx sweep on RTX 3090 Ti (24 GB shared desktop): weights+compute peak ~20.25 GB;
+  q8_0 KV @48K = +1.54 GB → 22.35 GB total, **7/7 boots OK**. 56K+/64K fail (single KV block
+  >1.79 GB can't allocate — driver VA fragmentation after many large load/unload cycles);
+  32K f16 KV (2.05 GB block) and MTP spec decoding hit the same wall
+- Key findings: `-ub 256` keeps the flash-attn compute buffer ~150 MiB (default ubatch 2048
+  intermittently fails to find a contiguous block); q8_0 KV required (f16 doesn't fit 40K+);
+  no MTP at 48K; small `cudaMalloc failed` errors = fragmented allocator state, reboot fixes
+- Verified: generation + clean read/respond tool calls through the proxy (smoke test green)
+- Added profile `Qwen3.6-27B-UD-Q4_K_XL` (48K ctx, q8_0 KV, -ub 256) + docs/models.md + CLAUDE.md
+- Forge eval subset (4 scenarios × 3 runs, proxy mode): **8/12 completion, 9/9 (100%) accuracy**
+  on completed runs. tool_selection 0/3: correct tool sequence (lookup_user→get_permissions) but
+  answers in prose instead of calling the terminal respond() tool (Ornith-class quirk)
+
 ## 2026-06-27 — Ornith-1.0-9B assessment
 - Booted Ornith-1.0-9B Q8_0 (200K ctx) on cg's llama.cpp :8080 + guardrails proxy :8081; smoke-tested tool calls through both layers (green)
 - Prong 1 (real task): delegated the open `stagnation_threshold` config-plumbing bug to Ornith via cg-worker — PASSED first try (1-line edit + 1 test, 488 green, no rework). Independently verified

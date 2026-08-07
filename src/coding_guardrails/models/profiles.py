@@ -104,6 +104,36 @@ PROFILES: dict[str, ModelProfile] = {
     # both. Gate lowered to 16.5 GB (measured + ~1.2 GB margin): coexists with the
     # embedding model, no context cut, no KV-quant change. Re-raise if real peak
     # usage during long agentic turns is observed above ~16 GB.
+    # ── Qwen3.6-27B (Dense hybrid, 27B params, 262K native ctx, MTP file) ──
+    # qwen3next arch (Gated DeltaNet SSM + Gated Attention hybrid): 64 layers in
+    # 16×(3×DeltaNet→FFN → 1×Attention→FFN) blocks — only 16 layers hold growing
+    # KV, so KV is 65,536 B/token f16 / 32,768 B/token q8_0.
+    # Native ctx 262,144 (extensible to 1M); Unsloth UD-Q4_K_XL = 17.9 GB file.
+    # MEASURED 2026-08-07 (RTX 3090 Ti, 24 GB, shared desktop):
+    #   - Weights + compute peak at ~20.25 GB; q8_0 KV @ 48K = +1.54 GB → 22.35 GB
+    #     total, 7/7 boots OK. 56K+ q8_0 KV needs a >1.79 GB single block → fails
+    #     in the fragmented allocator state (driver VA fragmentation after many
+    #     large load/unload cycles on this host). 32K f16 KV needs a 2.05 GB block
+    #     (same failure); MTP spec decoding needs the same → MTP off at 48K.
+    #   - `-ub 256` keeps the flash-attn compute buffer small (~150 MiB vs ~1.6 GB
+    #     without flash-attn); default ubatch (2048) intermittently fails to find a
+    #     contiguous block. q8_0 KV required — f16 KV doesn't fit 40K+.
+    #   - Tool-calling verified through llama-server: clean read/respond calls.
+    # Sampling from Forge registry (model card): temp=1.0, top_k=20, top_p=0.95.
+    "Qwen3.6-27B-UD-Q4_K_XL": ModelProfile(
+        name="Qwen3.6-27B-UD-Q4_K_XL",
+        family="Qwen3.6",
+        quant="UD-Q4_K_XL",
+        file_size_gb=17.9,
+        vram_required_gb=19.5,  # weights 17.9 + compute ~1 + q8_0 KV 1.54 @48K; fits 19-19.7 GB free on shared desktop
+        context_tokens=49152,   # max reliable: 48K q8_0 KV (7/7 boots); 56K+ fails (allocator block limit)
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1",
+                     "-ub", "256", "-ctk", "q8_0", "-ctv", "q8_0"],
+    ),
     "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
         name="Qwen3.5-9B-UD-Q4_K_XL",
         family="Qwen3.5",

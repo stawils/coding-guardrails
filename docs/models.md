@@ -7,6 +7,7 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
+| **Qwen3.6-27B** | UD-Q4_K_XL | 17.9 GB | 19.5 GB | **48K** (q8_0 KV) | 27B | Dense (hybrid) | ~20-30 tok/s |
 | **Qwen3.5-9B** ⭐ | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
@@ -29,6 +30,32 @@ optimized for local inference with llama-server on consumer GPUs.
   terminal-tool commitment (`tool_selection` 0/10). Full analysis:
   [reports/../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md](../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md).
 - License: LFM Open License v1.0. No MTP.
+
+## Qwen3.6-27B (Newest, highest capability)
+
+- **27B dense hybrid** (`qwen3next` arch): 64 layers in 16×(3×Gated DeltaNet→FFN → 1×Gated Attention→FFN) blocks.
+  Only **16 of 64 layers hold growing KV** (65,536 B/token f16, 32,768 B/token q8_0) — the DeltaNet layers
+  keep fixed-size recurrent state.
+- **Native 262K context** (extensible to 1M), agentic-coding focused release, MTP-trained (tensors present).
+- **Unsloth UD-Q4_K_XL** GGUF, 17.9 GB — Apache-2.0.
+- **MEASURED 2026-08-07 (RTX 3090 Ti 24 GB, shared desktop):** weights+compute peak ~20.25 GB; q8_0 KV
+  @48K adds 1.54 GB → **22.35 GB total**, 7/7 boots OK. **48K is the reliable max**: 56K+ needs a single
+  KV block >1.79 GB, which fails in the driver's fragmented allocator state (VA fragmentation after many
+  large load/unload cycles). 32K f16 KV (2.05 GB block) and MTP spec decoding hit the same wall.
+- **Boot requirements baked into the profile:** `-ctk q8_0 -ctv q8_0` (q8_0 KV — f16 KV doesn't fit 40K+)
+  and `-ub 256` (keeps the flash-attn compute buffer ~150 MiB; default ubatch intermittently can't find a
+  contiguous block). **No `--spec-type draft-mtp`** at 48K — the 2 GB spec/KV blocks don't fit.
+- **Verified:** generation + clean `read`/`respond` tool calls through the proxy.
+- **Forge eval subset (2026-08-07, proxy mode, 4 scenarios × 3 runs):** 8/12 completion,
+  **9/9 (100%) accuracy** on completed runs. `basic_2step` 3/3, `data_gap_recovery` 3/3,
+  `error_recovery` 2/3 (1 ReadTimeout), `tool_selection` **0/3** — tool sequence is correct
+  (`lookup_user` → `get_permissions`) but the model **answers in prose instead of calling the
+  terminal `respond()` tool** (Ornith-class quirk: same correct content, no explicit terminal
+  call). Harmless for chat, fatal for strict terminal-tool workflows.
+- Sampling (model card, via Forge registry): temp=1.0, top_k=20, top_p=0.95.
+- ⚠️ **GPU allocator state matters:** if `cg server start` fails with `cudaMalloc failed: out of memory`
+  on small buffers, the driver's memory is fragmented (many prior large load/unload cycles). A reboot
+  clears it; 56K-64K q8_0 KV becomes loadable again in a fresh state.
 
 ## Qwen3.5-9B (Default) ⭐
 
@@ -70,6 +97,27 @@ optimized for local inference with llama-server on consumer GPUs.
   related output-file re-emission loop.
 
 ## Boot Commands
+
+### Qwen3.6-27B (48K context, q8_0 KV — max reliable)
+
+```bash
+llama-server \
+  -m Qwen3.6-27B-UD-Q4_K_XL.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 49152 -np 1 \
+  -ub 256 -ctk q8_0 -ctv q8_0
+```
+
+or via cg (profile-driven, same flags):
+
+```bash
+cg server start -m Qwen3.6-27B-UD-Q4_K_XL
+```
+
+> **Notes:** No `--spec-type draft-mtp` — the MTP spec buffers need a contiguous 2 GB block that
+> doesn't fit alongside 48K of KV on the fragmented 24 GB allocator. `-ub 256` and q8_0 KV are
+> required (see profile comment). Max measured: 48K. After a GPU driver reset/reboot, 56K-64K may
+> load.
 
 ### Qwen3.5-9B (200K context, default) ⭐
 

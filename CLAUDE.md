@@ -144,13 +144,16 @@ $LLAMA \
   --jinja --flash-attn auto --spec-type draft-mtp -np 1 -v
 #   Tune up: raise -c toward 200000 (max) for long context, --spec-draft-n-max 5 for more speed.
 
-# Qwen3.6-27B UD-Q4_K_XL (32K ctx) — RAW MODE: no model profile (skips sampling defaults)
+# Qwen3.6-27B UD-Q4_K_XL (48K ctx q8_0 KV — MAX RELIABLE, profile-driven)
+#   Has a cg model profile (Qwen3.6-27B-UD-Q4_K_XL): 48K ctx, q8_0 KV, -ub 256, no MTP.
+#   cg server start -m Qwen3.6-27B-UD-Q4_K_XL
+#   Raw equivalent:
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q4_K_XL.gguf \
-  -c 32768 -ngl 99 --host 0.0.0.0 --port 8080 \
-  --jinja --flash-attn auto -v
+  -c 49152 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ub 256 -ctk q8_0 -ctv q8_0 -np 1 -v
 
-# Qwen3.6-27B UD-Q3_K_XL (82K ctx, needs 24+ GB free VRAM)
+# Qwen3.6-27B UD-Q3_K_XL (49K ctx max, needs 24+ GB free VRAM — not profile-registered)
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q3_K_XL.gguf \
   -c 81920 -ngl 99 --host 0.0.0.0 --port 8080 \
@@ -206,7 +209,12 @@ coding-guardrails serve \
 - **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). Rebuilt 2026-07-03 to latest master (commit `fdb1db877`, build 9860) — supports Qwen3.5-MTP, Qwen3.6-27B (qwen3next arch / `ssm_conv1d`), Gemma 4, Ornith, LFM2.5 (`lfm2` arch). Build config: `GGML_CUDA=ON`, `LLAMA_CURL=ON`, Release. NCCL disabled (single-GPU). Stale `llama-server.bak.8276` kept as backup.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
-- Qwen3.6-27B Q3 model OOMs at 82K ctx on RTX 3090 Ti — reduce to ≤49K or use Q4_K_XL at 32K.
+- Qwen3.6-27B: max reliable ctx on the 24 GB card is **48K with q8_0 KV** (UD-Q4_K_XL). 56K+ needs a
+  single KV block >1.79 GB that the fragmented driver allocator can't provide; 32K f16 KV (2.05 GB block)
+  and MTP spec decoding hit the same wall. Q3_K_XL fits ~49K. If small `cudaMalloc failed` errors appear
+  at boot, the driver's VA space is fragmented — reboot clears it (56K-64K loads again in a fresh state).
+  ⚠️ **Prose-quirk:** executes correct tool sequences but answers in prose instead of calling the
+  terminal `respond()` tool (Ornith-class) — fine for chat, fails strict terminal-tool evals.
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
