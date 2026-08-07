@@ -14,6 +14,11 @@
 - Forge eval subset (4 scenarios × 3 runs, proxy mode): **8/12 completion, 9/9 (100%) accuracy**
   on completed runs. tool_selection 0/3: correct tool sequence (lookup_user→get_permissions) but
   answers in prose instead of calling the terminal respond() tool (Ornith-class quirk)
+- **Full Forge 30-scenario eval (150 runs, proxy mode, 2h): 138/150 (92%) completion,
+  131/140 (94%) accuracy** — completion -1pp vs Qwen3.5-9B (93%), accuracy parity (94%),
+  vs LFM2.5 71% acc. All 10 tool_selection+stateful losses = prose quirk; 2 timeouts;
+  data_gap_recovery_extended 20% acc (reports missing recovered fields, same class as LFM2.5 0/10).
+  Runs: eval/runs/2026-08-07_123232Z/
 - **Worker test (2026-08-07, cg-worker via isolated stack :8090/:8082):** 2/2 real tasks passed
   first try — README model table (committed d5afbab) + FORGE_EVAL_BACKEND_URL env override
   (local, eval/ gitignored). Terminated cleanly in real delegation (prose quirk did NOT manifest).

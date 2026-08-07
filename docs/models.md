@@ -46,12 +46,14 @@ optimized for local inference with llama-server on consumer GPUs.
   and `-ub 256` (keeps the flash-attn compute buffer ~150 MiB; default ubatch intermittently can't find a
   contiguous block). **No `--spec-type draft-mtp`** at 48K — the 2 GB spec/KV blocks don't fit.
 - **Verified:** generation + clean `read`/`respond` tool calls through the proxy.
-- **Forge eval subset (2026-08-07, proxy mode, 4 scenarios × 3 runs):** 8/12 completion,
-  **9/9 (100%) accuracy** on completed runs. `basic_2step` 3/3, `data_gap_recovery` 3/3,
-  `error_recovery` 2/3 (1 ReadTimeout), `tool_selection` **0/3** — tool sequence is correct
-  (`lookup_user` → `get_permissions`) but the model **answers in prose instead of calling the
-  terminal `respond()` tool** (Ornith-class quirk: same correct content, no explicit terminal
-  call). Harmless for chat, fatal for strict terminal-tool workflows.
+- **Forge 30-scenario eval (2026-08-07, proxy mode, 150 runs):** **138/150 completion (92%),
+  131/140 accuracy (94%)** — completion -1pp vs Qwen3.5-9B (93%), accuracy **parity** (94%),
+  vs LFM2.5's 71% accuracy. All 10 completion losses are `tool_selection` (+stateful) — the
+  model executes the correct tool sequence but answers in prose instead of the terminal
+  `respond()` call (Ornith-class quirk); 2 further losses are timeouts (error_recovery,
+  relevance_detection_stateful). The only accuracy weakness: `data_gap_recovery_extended`
+  (+stateful) at 20% — detailed reports missing required recovered fields (same scenario class
+  that sank LFM2.5 0/10). All other 28 scenarios ≥80% acc, 25 of them 100%.
 - Sampling (model card, via Forge registry): temp=1.0, top_k=20, top_p=0.95.
 - ⚠️ **GPU allocator state matters:** if `cg server start` fails with `cudaMalloc failed: out of memory`
   on small buffers, the driver's memory is fragmented (many prior large load/unload cycles). A reboot
