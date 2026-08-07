@@ -1,5 +1,20 @@
 # Session History
 
+## 2026-08-07 — v0.16.1: fix proxy eating respond() calls (terminal-tool workflows)
+- **Bug:** since v0.7.4 (2026-06-01) the proxy converted respond()→text even when the agent
+  declared a respond tool. Every terminal-tool workflow (Forge evals, custom respond() agents)
+  looked like a prose failure — tool_selection went 5/5 (pre-v0.7.4, May 31 runs 150/150) to
+  0/5 for every model since. The "prose quirk" diagnosis for Ornith/LFM2.5/Qwen3.6-27B was wrong.
+- **Fix (handler.py):** declared respond tool → pass the call through to the agent (10/10
+  pass-throughs, 0 conversions in re-test); plus terminal-tool enforcement injection ("call the
+  respond tool with your final answer") and a terminal-aware retry nudge for respond-declared
+  requests; real-agent (bash/read/edit/write) requests unchanged (prose termination stays).
+- **Tests:** new tests/unit/test_handler_respond.py (9 tests). 556/556 pass. `_text_retry_nudge`
+  kept for real agents; `_terminal_retry_nudge` added.
+- **Verified:** tool_selection + stateful 0/5 → **5/5 each; 20/20 (100%)** on a 4-scenario
+  control run (basic_2step, argument_fidelity unaffected). Full 150-run eval re-run under the
+  fix in progress — the 138/150 figure from the morning run included the bug's 10 losses.
+
 ## 2026-08-07 — Qwen3.6-27B added (max-ctx profile, 48K q8_0 KV)
 - Downloaded Qwen3.6-27B-UD-Q4_K_XL (17.9 GB, unsloth/Qwen3.6-27B-MTP-GGUF) into cg cache
 - Empirical max-ctx sweep on RTX 3090 Ti (24 GB shared desktop): weights+compute peak ~20.25 GB;

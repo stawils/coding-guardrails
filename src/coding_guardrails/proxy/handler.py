@@ -159,6 +159,20 @@ def _text_retry_nudge(raw_response: str) -> str:
     )
 
 
+def _terminal_retry_nudge(raw_response: str) -> str:
+    """Retry nudge for terminal-tool workflows (request declared a respond tool).
+
+    Mirrors pi's proven enforcement: name the exact tool and the exact action.
+    The generic "respond with a tool call" nudge leaves models to guess which
+    tool — they re-answer in prose and exhaust retries.
+    """
+    return (
+        "Your previous response was text instead of a tool call. "
+        "If the task is complete, call the respond tool with your final answer. "
+        "Otherwise, make a tool call to continue working."
+    )
+
+
 async def handle_chat_completions(
     body: dict[str, Any],
     client: LLMClient,
@@ -215,8 +229,10 @@ async def handle_chat_completions(
             cleaned.append(m)
         openai_messages = cleaned
 
-    # Inject tool-call enforcement for real coding agents.
-    # Only when the request includes coding tools (bash, read, edit, write).
+    # Inject tool-call enforcement. Two regimes:
+    #   - Request declared a respond-style terminal tool → finish with respond().
+    #   - Real coding agent (bash/read/edit/write, no respond tool) → finish with
+    #     a plain-text summary (Pi/Cline treat text as the terminal signal).
     _REAL_AGENT_TOOLS = {"bash", "read", "write", "edit"}
     tool_names_lower = set()
     if request_tools:
@@ -225,21 +241,33 @@ async def handle_chat_completions(
             if fname:
                 tool_names_lower.add(fname.lower())
 
-    if _REAL_AGENT_TOOLS & tool_names_lower:
+    if RESPOND_TOOL_NAME in tool_names_lower:
+        # Terminal-tool enforcement — mirrors pi's proven wording. Without it,
+        # models answer in prose and terminal-tool workflows (Forge evals,
+        # custom respond() agents) retry until they fail.
+        enforcement = (
+            "When the task is COMPLETE and you have a final answer, call the "
+            f"{RESPOND_TOOL_NAME} tool with your final answer. "
+            "Do NOT reply in free text when a respond tool is available."
+        )
+    elif _REAL_AGENT_TOOLS & tool_names_lower:
         enforcement = (
             "When working on a task, respond by calling tools (bash, read, edit, write). "
             "When the task is COMPLETE and you have nothing left to do, respond with plain text summarizing what was done. "
             "Do NOT call unnecessary tools just to have a tool call. If unsure, call bash with 'echo ready'. "
             "Before finishing, run the project's linter (e.g. ruff check) on every file you touched; apply only the trivial single-line fixes it reports (unused import, extraneous f-prefix) and note anything larger rather than silently applying it."
         )
-        if openai_messages:
-            first = openai_messages[0]
-            if first.get("role") == "system":
-                content = first.get("content", "")
-                if enforcement not in content:
-                    openai_messages[0] = {**first, "content": content + "\n\n" + enforcement}
-            else:
-                openai_messages.insert(0, {"role": "system", "content": enforcement})
+    else:
+        enforcement = None
+
+    if enforcement and openai_messages:
+        first = openai_messages[0]
+        if first.get("role") == "system":
+            content = first.get("content", "")
+            if enforcement not in content:
+                openai_messages[0] = {**first, "content": content + "\n\n" + enforcement}
+        else:
+            openai_messages.insert(0, {"role": "system", "content": enforcement})
 
     # Convert inbound
     messages = openai_to_messages(openai_messages)
@@ -280,7 +308,9 @@ async def handle_chat_completions(
     validator = ResponseValidator(
         tool_names,
         rescue_enabled=rescue_enabled,
-        retry_nudge_fn=_text_retry_nudge,
+        retry_nudge_fn=_terminal_retry_nudge
+        if RESPOND_TOOL_NAME in tool_names_lower
+        else _text_retry_nudge,
     )
     error_tracker = ErrorTracker(max_retries=max_retries)
 
@@ -331,10 +361,19 @@ async def handle_chat_completions(
     other_calls = [tc for tc in tool_calls if tc.tool != RESPOND_TOOL_NAME]
 
     if respond_calls and not other_calls:
+        attempts_tag = "[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
+        # If the agent declared a respond tool in this request, it expects the
+        # call back — pass it through (Forge eval runners and custom terminal
+        # workflows capture the terminal tool). Converting it to text here makes
+        # every terminal-tool workflow look like a prose failure.
+        if RESPOND_TOOL_NAME in tool_names_lower:
+            logger.info("L1 done %s (respond() passed through — declared in request)", attempts_tag)
+            if is_stream:
+                return tool_calls_to_sse_events(respond_calls, model=model_name)
+            return tool_calls_to_openai(respond_calls, model=model_name)
         # Convert respond() to text — most agents (Pi, Cline, etc.)
         # don't have a respond tool. The model is saying "I'm done."
         msg = respond_calls[0].args.get("message", respond_calls[0].args.get("answer", ""))
-        attempts_tag = "[%d attempt%s]" % (attempts, "s" if attempts != 1 else "") if attempts > 1 else ""
         logger.info("L1 done %s (%s, respond -> text: %s)",
                     attempts_tag, _fmt_elapsed(elapsed_l1), _short(msg, 60))
         if is_stream:

@@ -213,10 +213,11 @@ coding-guardrails serve \
   single KV block >1.79 GB that the fragmented driver allocator can't provide; 32K f16 KV (2.05 GB block)
   and MTP spec decoding hit the same wall. Q3_K_XL fits ~49K. If small `cudaMalloc failed` errors appear
   at boot, the driver's VA space is fragmented — reboot clears it (56K-64K loads again in a fresh state).
-  ⚠️ **Prose-quirk:** executes correct tool sequences but answers in prose instead of calling the
-  terminal `respond()` tool (Ornith-class) — fine for chat, fails strict terminal-tool evals.
+  ⚠️ **Terminal-tool note (fixed v0.16.1):** the proxy ate respond() calls for agents that
+  declared a respond tool (v0.7.4 regression) — tool_selection scored 0/5 for every model
+  since. Fixed: declared respond tools pass through. Qwen3.6-27B tool_selection: 0/5 → **5/5**.
   Full Forge 30-scenario eval 2026-08-07: 138/150 (92%) completion, 131/140 (94%) accuracy
-  (parity with Qwen3.5-9B on accuracy; only data_gap_recovery_extended weak at 20%).
+  (pre-fix; re-run under v0.16.1 pending — data_gap_recovery_extended weak at 20%).
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
