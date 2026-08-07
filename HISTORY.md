@@ -14,6 +14,11 @@
 - Forge eval subset (4 scenarios × 3 runs, proxy mode): **8/12 completion, 9/9 (100%) accuracy**
   on completed runs. tool_selection 0/3: correct tool sequence (lookup_user→get_permissions) but
   answers in prose instead of calling the terminal respond() tool (Ornith-class quirk)
+- **Worker test (2026-08-07, cg-worker via isolated stack :8090/:8082):** 2/2 real tasks passed
+  first try — README model table (committed d5afbab) + FORGE_EVAL_BACKEND_URL env override
+  (local, eval/ gitignored). Terminated cleanly in real delegation (prose quirk did NOT manifest).
+  Verdict: viable worker; Qwen3.5-9B stays default. Full report:
+  plans/2026-08-07_qwen3.6-27b-worker-assessment.md
 
 ## 2026-06-27 — Ornith-1.0-9B assessment
 - Booted Ornith-1.0-9B Q8_0 (200K ctx) on cg's llama.cpp :8080 + guardrails proxy :8081; smoke-tested tool calls through both layers (green)
