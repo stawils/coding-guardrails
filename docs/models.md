@@ -24,10 +24,11 @@ optimized for local inference with llama-server on consumer GPUs.
 - Card sampling: temp 0.1, top_k 50, rep_penalty 1.1 (baked into boot flags).
 - ⚠️ **Card explicitly says NOT recommended for agentic coding / knowledge-heavy tasks** —
   **measured 2026-08-05 (Forge eval, proxy mode): 138/150 completion (92%), 100/140 correctness (71%)**
-  vs Qwen3.5-9B's 140/150 (93%) / 132/140 (94%). Completion near parity and ~1.9× faster, but
-  **-23pp correctness**, concentrated in data-heavy scenarios (`data_gap_recovery_extended`,
-  `argument_transformation`, `inconsistent_api_recovery`, `grounded_synthesis` — all 0/10) and
-  terminal-tool commitment (`tool_selection` 0/10). Full analysis:
+  vs Qwen3.5-9B's 140/150 (93%) / 132/140 (94%). ⚠️ **Bug-affected:** the `tool_selection` 0/10
+  was the v0.7.4 respond()-conversion bug (proxy ate respond(), not the model) — the data-heavy
+  scenario failures (all 0/10: `data_gap_recovery_extended`, `argument_transformation`,
+  `inconsistent_api_recovery`, `grounded_synthesis`) stand. **Re-eval pending under v0.16.1**
+  (BACKLOG.md). Completion near parity and ~1.9× faster, but **-23pp correctness**. Full analysis:
   [reports/../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md](../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md).
 - License: LFM Open License v1.0. No MTP.
 
@@ -90,18 +91,19 @@ optimized for local inference with llama-server on consumer GPUs.
   `SafeLlamafileClient` already captures (no proxy changes needed).
 - **Measured locally (2026-06-27, Forge 30-scenario eval, Q8_0, proxy mode):**
   140/150 completion (93%), 132/140 correctness (94%) — **parity with Qwen3.5-9B**,
-  not a gain. The RL post-train does not improve agentic reliability here. Full
-  report: [reports/2026-06-27_ornith-assessment.md](../reports/2026-06-27_ornith-assessment.md).
+  not a gain. ⚠️ **Bug-affected:** measured under the v0.7.4 respond()-conversion bug
+  (tool_selection 0/10 was the proxy eating respond(), not the model) — **re-eval
+  pending under v0.16.1** (BACKLOG.md). Full report:
+  [reports/2026-06-27_ornith-assessment.md](../reports/2026-06-27_ornith-assessment.md).
 - Vendor benchmarks (69.4 SWE-bench Verified, 43.1 Terminal-Bench 2.1) are disputed
   and did not reproduce as a reliability advantage. MIT-licensed.
 - Official GGUF only (`deepreinforce-ai/Ornith-1.0-9B-GGUF`) — **no Unsloth UD, no MTP tensors**, so
   do **not** pass `--spec-type draft-mtp`.
 - Sampling (from card): temp=0.6, top_k=20, top_p=0.95.
-- ⚠️ **Prefers prose answers over terminal tool calls.** On the Forge eval Ornith
-  called `respond()` only 2× in 150 runs, answering in plain text instead. This is
-  fatal for workflows that require an explicit final tool call to terminate (e.g.
-  `tool_selection`, 0/5) but harmless otherwise. The `dup_write` rule catches the
-  related output-file re-emission loop.
+- ⚠️ **Terminal-tool note (revised v0.16.1):** the earlier "prefers prose over terminal
+  respond()" diagnosis was **wrong** — the 2026-06-27 eval ran under the v0.7.4 respond()-
+  conversion bug, so any respond() calls were eaten by the proxy and counted as prose.
+  The `respond()` 2×/150 figure is unreliable for the same reason. Re-eval pending.
 
 ## Boot Commands
 
