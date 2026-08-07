@@ -46,19 +46,19 @@ optimized for local inference with llama-server on consumer GPUs.
   and `-ub 256` (keeps the flash-attn compute buffer ~150 MiB; default ubatch intermittently can't find a
   contiguous block). **No `--spec-type draft-mtp`** at 48K — the 2 GB spec/KV blocks don't fit.
 - **Verified:** generation + clean `read`/`respond` tool calls through the proxy.
-- **Forge 30-scenario eval (2026-08-07, proxy mode, 150 runs):** **138/150 completion (92%),
-  131/140 accuracy (94%)** — completion -1pp vs Qwen3.5-9B (93%), accuracy **parity** (94%),
-  vs LFM2.5's 71% accuracy. ⚠️ **Numbers affected by the v0.7.4 respond()-conversion bug**
-  (see below); re-run under v0.16.1 gives the corrected figures. All 10 tool_selection losses
-  were the bug, not the model. The only accuracy weakness: `data_gap_recovery_extended`
-  (+stateful) at 20% — detailed reports missing required recovered fields (same scenario class
-  that sank LFM2.5 0/10). All other scenarios ≥80% acc, 25 of them 100%.
+- **Forge 30-scenario eval (2026-08-07, proxy mode, 150 runs):** **149/150 completion (99.3%),
+  141/150 accuracy (94%)** — measured under v0.16.1 (respond() pass-through fix). The morning
+  run (138/150, 92%) was inflated by the v0.7.4 respond()-conversion bug, which cost every
+  model 10 tool_selection points. The only completion loss: one relevance_detection timeout.
+  Accuracy weakness: `data_gap_recovery_extended` (+stateful) 40%/0% — detailed reports
+  missing required recovered fields (same scenario class that sank LFM2.5 0/10). Everything
+  else ≥80% acc, 25 of 30 scenarios at 100%.
 - **v0.16.1 fix (2026-08-07): the proxy ate respond() calls.** Since v0.7.4 (2026-06-01) the
   proxy converted respond()→text even when the agent declared a respond tool. Tool_selection
   went from 5/5 (pre-v0.7.4) to 0/5 for every model — terminal-tool workflows looked like
   prose failures. Fixed: declared respond tools now pass the call through (plus terminal
   enforcement + terminal-aware retry nudge). Verified: tool_selection + stateful 0/5 → **5/5
-  each, 20/20 (100%)** on a 4-scenario control run.
+  each; full eval 138/150 → 149/150** (99.3% completion).
 - Sampling (model card, via Forge registry): temp=1.0, top_k=20, top_p=0.95.
 - ⚠️ **GPU allocator state matters:** if `cg server start` fails with `cudaMalloc failed: out of memory`
   on small buffers, the driver's memory is fragmented (many prior large load/unload cycles). A reboot

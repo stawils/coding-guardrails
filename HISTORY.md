@@ -12,8 +12,10 @@
 - **Tests:** new tests/unit/test_handler_respond.py (9 tests). 556/556 pass. `_text_retry_nudge`
   kept for real agents; `_terminal_retry_nudge` added.
 - **Verified:** tool_selection + stateful 0/5 → **5/5 each; 20/20 (100%)** on a 4-scenario
-  control run (basic_2step, argument_fidelity unaffected). Full 150-run eval re-run under the
-  fix in progress — the 138/150 figure from the morning run included the bug's 10 losses.
+  control run (basic_2step, argument_fidelity unaffected). **Full 150-run eval re-run under
+  the fix: 149/150 (99.3%) completion, 141/150 (94%) accuracy** — vs 138/150 (92%) pre-fix;
+  the only loss left is one relevance_detection timeout. Runs:
+  eval/runs/2026-08-07_151927Z/ (fixed) vs 2026-08-07_123232Z/ (buggy).
 
 ## 2026-08-07 — Qwen3.6-27B added (max-ctx profile, 48K q8_0 KV)
 - Downloaded Qwen3.6-27B-UD-Q4_K_XL (17.9 GB, unsloth/Qwen3.6-27B-MTP-GGUF) into cg cache
