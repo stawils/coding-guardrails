@@ -60,14 +60,11 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 |---|---|---|---|---|
 | **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
 | **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model; 93% Forge eval (parity with Qwen); answers in prose instead of calling terminal tools |
+| **Gemma 4 26B A4B QAT** | 19.8 GB | 200K | ~40+ tok/s | MoE QAT, highest capability; prone to degenerate thinking loops |
+| **LFM2.5-2.6B** | 9.0 GB | 128K | ~113 tok/s | BF16 max precision; NOT recommended for agentic coding (card caveat) |
+| **Qwen3.6-27B** | 19.5 GB | 48K | ~20-30 tok/s | Newest, highest capability; q8_0 KV; prose-termination quirk (no terminal respond() call) |
 
-These are the two recommended local backends. Qwen3.5-9B is the default —
-fastest (MTP) and most reliable for tool-calling. Ornith-1.0-9B (a reasoning
-RL post-train on Qwen3.5-9B) **matches** it on the Forge 30-scenario eval
-(140/150, 93%) but answers in prose instead of calling terminal tools, so it
-fails workflows that require an explicit final tool call. Any OpenAI-compatible
-backend works. See [docs/models.md](docs/models.md) and the
-[Ornith assessment](reports/2026-06-27_ornith-assessment.md) for details.
+Qwen3.5-9B remains the default — best tool-calling reliability. The newer options (Gemma 4 26B, LFM2.5-2.6B, Qwen3.6-27B) are higher-capability alternatives with tradeoffs: Gemma 4 26B is prone to thinking loops, LFM2.5 carries a card caveat against agentic coding, and Qwen3.6-27B has a prose-termination quirk. Any OpenAI-compatible backend works. See [docs/models.md](docs/models.md) and the [Ornith assessment](reports/2026-06-27_ornith-assessment.md) for details.
 
 ## Agents
 
