@@ -58,25 +58,27 @@ Optimized for consumer GPUs (24 GB VRAM) via llama-server:
 
 | Model | VRAM | Context | Speed | Notes |
 |---|---|---|---|---|
-| **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest, best tool-calling reliability |
-| **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning model; 93% Forge eval (bug-affected — re-eval pending) |
+| **Qwen3.5-9B** ⭐ | 18 GB | 200K | ~53 tok/s | Default. Dense, MTP, fastest; **100% Forge eval (150/150)** |
+| **Ornith-1.0-9B** | 18 GB | 200K | ~50 tok/s | Dense (Qwen3.5-9B RL post-train). Reasoning; **100% completion, 95% accuracy — top accuracy** |
 | **Gemma 4 26B A4B QAT** | 19.8 GB | 200K | ~40+ tok/s | MoE QAT, highest capability; prone to degenerate thinking loops |
-| **LFM2.5-2.6B** | 9.0 GB | 128K | ~113 tok/s | BF16 max precision; NOT recommended for agentic coding (card caveat); eval bug-affected — re-eval pending |
-| **Qwen3.6-27B** | 19.5 GB | 48K | ~20-30 tok/s | Newest, highest capability; **99.3% Forge eval (149/150, v0.16.1)**; q8_0 KV @48K |
+| **LFM2.5-2.6B** | 9.0 GB | 128K | ~113 tok/s | BF16 max precision; 92.7%/71% eval — card caveat confirmed (no terminal respond(), 0% data-heavy) |
+| **Qwen3.6-27B** | 19.5 GB | 48K | ~20-30 tok/s | Newest, highest capability; **99.3% Forge eval (149/150)**; q8_0 KV @48K |
 
-Qwen3.5-9B remains the default — best tool-calling reliability. The newer options (Gemma 4 26B,
-LFM2.5-2.6B, Qwen3.6-27B) are higher-capability alternatives with tradeoffs: Gemma 4 26B is
-prone to thinking loops, LFM2.5 carries a card caveat against agentic coding, and Qwen3.6-27B
-is capped at 48K context. Any OpenAI-compatible backend works. See
+Qwen3.5-9B remains the default — fastest (MTP) with 100% eval completion. Ornith-1.0-9B now
+leads accuracy (95%). The higher-capability options have tradeoffs: Gemma 4 26B is prone to
+thinking loops, LFM2.5's card caveat is confirmed by eval, and Qwen3.6-27B is capped at 48K
+context. Any OpenAI-compatible backend works. See
 [docs/models.md](docs/models.md) and the [Ornith assessment](reports/2026-06-27_ornith-assessment.md)
 for details.
 
 > **Evals & the v0.16.1 respond() fix:** since v0.7.4 (2026-06-01) the proxy converted
 > `respond()`→text even when the agent declared a respond tool, making terminal-tool evals
-> (tool_selection) fail 0/5 for **every** model — the "prose quirk" diagnoses for Ornith/LFM2.5
-> were wrong. v0.16.1 passes declared respond() calls through. Qwen3.6-27B re-eval under the
-> fix: **149/150 (99.3%) completion, 141/150 (94%) accuracy** (was 138/150 with the bug).
-> Re-evaluation of Qwen3.5-9B / Ornith / LFM2.5 is scheduled (BACKLOG.md).
+> (tool_selection) fail 0/5 for **every** model. v0.16.1 passes declared respond() calls
+> through. **Re-eval 2026-08-08 (all proxy mode, 150 runs):** Qwen3.5-9B **150/150 (100%)** /
+> 138/150 acc; Ornith **150/150 (100%)** / **143/150 (95%) acc**; Qwen3.6-27B **149/150 (99.3%)** /
+> 141/150 acc; LFM2.5 139/150 (92.7%) / 100/140 (71%) — its tool_selection 0/10 and 0% data-heavy
+> accuracy are **genuine** (never calls respond()). The "prose quirk" diagnoses for
+> Qwen3.5-9B/Ornith/Qwen3.6-27B were wrong (the bug). Full numbers: [docs/models.md](docs/models.md).
 
 ## Agents
 

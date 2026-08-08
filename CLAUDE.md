@@ -178,16 +178,18 @@ $LLAMA \
 # Ornith-1.0-9B Q8_0 (200K ctx, ~18 GB VRAM)
 #   DeepReinforce RL post-train on Qwen3.5-9B — same qwen3_5 hybrid attn arch.
 #   Reasoning model (<think>...</think> + reasoning_content). NO MTP tensors.
-#   Verified locally 2026-06-27: Forge 93% = parity with Qwen3.5-9B (no gain, no regression).
-#   Prefers prose over terminal tool calls (respond() only 2x/150 runs). Use cg's own cache + cg server start.
+#   Re-eval 2026-08-08 (v0.16.1): 150/150 completion (100%), 143/150 accuracy (95%) = top
+#   accuracy. The old "93% parity" + "prefers prose" notes were the v0.7.4 respond() bug.
+#   Use cg's own cache + cg server start.
 coding-guardrails server start -m Ornith-1.0-9B-Q8_0 --ctx 200000
 #   (equivalent raw llama-server: --temp 0.6 --top-p 0.95 --top-k 20 -np 1, NO --spec-type draft-mtp)
 
 # LFM2.5-2.6B BF16 (128K ctx, ~9 GB VRAM — max precision, ~114 tok/s)
 #   Liquid AI edge model, lfm2 arch, pure reasoning model. NO MTP tensors.
-#   Measured 2026-08-05 Forge eval (proxy mode): 138/150 completion (92%),
-#   100/140 correctness (71%) vs Qwen3.5-9B 93%/94% — the card's "not recommended
-#   for agentic coding / knowledge-heavy tasks" held up. Fine for bounded/structured tasks.
+#   Re-eval 2026-08-08 (v0.16.1): 139/150 completion (92.7%), 100/140 correctness (71%).
+#   tool_selection 0/10 + 0% data-heavy are GENUINE (never calls respond()) — the card's
+#   "not recommended for agentic coding / knowledge-heavy tasks" held up.
+#   Fine for bounded/structured tasks.
 coding-guardrails server start -m LFM2.5-2.6B-BF16
 #   (equivalent raw llama-server: --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1)
 
@@ -252,7 +254,10 @@ python eval/scripts/run_layer2_eval.py
 
 Results go to `eval/runs/<timestamp>/` (gitignored).
 
-**Best result: 93% (140/150)** on Forge 30-scenario eval, +9pp over Forge's 84% baseline.
+**Best result: 150/150 completion (100%)** on Forge 30-scenario eval (Qwen3.5-9B + Ornith,
+re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
+that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.5: 139/150
+(92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.
 
 ## Development Guidelines
 

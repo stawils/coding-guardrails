@@ -13,6 +13,26 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
 
+## Forge eval results (v0.16.1 — respond() pass-through fix, 150 runs, proxy mode)
+
+All numbers corrected under the v0.16.1 fix (2026-08-08 re-eval). The v0.7.4 bug
+(proxy converting declared respond() calls to text) had zeroed tool_selection 0/5
+for every model — earlier "prose quirk" diagnoses for Qwen3.5-9B/Ornith/Qwen3.6-27B
+were wrong. LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
+
+| Model | Completion | Accuracy | Run |
+|---|---|---|---|
+| **Qwen3.5-9B** | **150/150 (100%)** | 138/150 (92%) | 2026-08-08_142633Z |
+| **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** — top | 2026-08-08_144837Z |
+| **Qwen3.6-27B** | **149/150 (99.3%)** | 141/150 (94%) | 2026-08-07_151927Z |
+| **LFM2.5-2.6B** | 139/150 (92.7%) | 100/140 (71%) — card caveat confirmed | 2026-08-08_153811Z |
+
+Shared weakness across all local models: data-heavy recovery scenarios
+(`data_gap_recovery_extended`, `argument_transformation`, `inconsistent_api_recovery`,
+`grounded_synthesis` all score ~0-60% accuracy; LFM2.5 0%). Qwen3.5-9B stays the
+default (MTP speed, 200K ctx, 100% completion); Ornith leads accuracy.
+
+
 ## LFM2.5-2.6B (BF16 — maximum precision, 128K context)
 
 - Liquid AI LFM2.5, agentic post-trained. **2.69B params, native 131072 (128K) context**.
@@ -23,12 +43,12 @@ optimized for local inference with llama-server on consumer GPUs.
 - Tool use via llama.cpp `--jinja` (Pythonic `<|tool_call_start|>`…`<|tool_call_end|>` format).
 - Card sampling: temp 0.1, top_k 50, rep_penalty 1.1 (baked into boot flags).
 - ⚠️ **Card explicitly says NOT recommended for agentic coding / knowledge-heavy tasks** —
-  **measured 2026-08-05 (Forge eval, proxy mode): 138/150 completion (92%), 100/140 correctness (71%)**
-  vs Qwen3.5-9B's 140/150 (93%) / 132/140 (94%). ⚠️ **Bug-affected:** the `tool_selection` 0/10
-  was the v0.7.4 respond()-conversion bug (proxy ate respond(), not the model) — the data-heavy
-  scenario failures (all 0/10: `data_gap_recovery_extended`, `argument_transformation`,
-  `inconsistent_api_recovery`, `grounded_synthesis`) stand. **Re-eval pending under v0.16.1**
-  (BACKLOG.md). Completion near parity and ~1.9× faster, but **-23pp correctness**. Full analysis:
+  **re-eval 2026-08-08 (v0.16.1): 139/150 completion (92.7%), 100/140 correctness (71%)** —
+  unchanged from the buggy 2026-08-05 run (138/150): **tool_selection 0/10 is GENUINE** (the
+  model never calls respond(); 0 pass-throughs/0 conversions in the proxy log) and the
+  data-heavy failures stand (all 0%: `data_gap_recovery_extended`, `argument_transformation`,
+  `inconsistent_api_recovery`, `grounded_synthesis`). The card caveat is confirmed: fine for
+  bounded tasks, not for terminal-tool or data-heavy agentic work. Full analysis:
   [reports/../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md](../plans/2026-08-05_lfm2.5-2.6b-worker-assessment.md).
 - License: LFM Open License v1.0. No MTP.
 
@@ -71,7 +91,10 @@ optimized for local inference with llama-server on consumer GPUs.
 - 200K context fits Pi's system prompt + long tool-use sessions
 - MTP draft tensors for ~1.5-2x speedup (~53 tok/s — fastest option)
 - Only 18 GB VRAM — 6 GB headroom, leaves room for other GPU work
-- Proven reliable tool-use through the proxy
+- **Forge eval (2026-08-08 re-eval, v0.16.1): 150/150 completion (100%), 138/150 accuracy (92%)** —
+  the old "93% (140/150)" was the v0.7.4 respond() bug (tool_selection 0/5); pre-bug May 31 runs
+  also hit 150/150. Weak spots mirror all local models: `data_gap_recovery_extended` 40%,
+  `argument_transformation` 60%.
 
 ## Gemma 4 26B A4B QAT (Alternative)
 
@@ -89,21 +112,19 @@ optimized for local inference with llama-server on consumer GPUs.
   architecture (`qwen3_5`), same vocab. Dense 9B, runs at Qwen3.5-class speed.
 - **Reasoning model** — opens with `<think>…</think>`, returns `reasoning_content`, which
   `SafeLlamafileClient` already captures (no proxy changes needed).
-- **Measured locally (2026-06-27, Forge 30-scenario eval, Q8_0, proxy mode):**
-  140/150 completion (93%), 132/140 correctness (94%) — **parity with Qwen3.5-9B**,
-  not a gain. ⚠️ **Bug-affected:** measured under the v0.7.4 respond()-conversion bug
-  (tool_selection 0/10 was the proxy eating respond(), not the model) — **re-eval
-  pending under v0.16.1** (BACKLOG.md). Full report:
+- **Re-eval 2026-08-08 (v0.16.1, 150 runs): 150/150 completion (100%), 143/150 accuracy (95%) —
+  top accuracy of the lineup.** The earlier "93% (140/150)" was the v0.7.4 respond() bug
+  (tool_selection 0/5); the "prefers prose" diagnosis was wrong. Full report:
   [reports/2026-06-27_ornith-assessment.md](../reports/2026-06-27_ornith-assessment.md).
 - Vendor benchmarks (69.4 SWE-bench Verified, 43.1 Terminal-Bench 2.1) are disputed
   and did not reproduce as a reliability advantage. MIT-licensed.
 - Official GGUF only (`deepreinforce-ai/Ornith-1.0-9B-GGUF`) — **no Unsloth UD, no MTP tensors**, so
   do **not** pass `--spec-type draft-mtp`.
 - Sampling (from card): temp=0.6, top_k=20, top_p=0.95.
-- ⚠️ **Terminal-tool note (revised v0.16.1):** the earlier "prefers prose over terminal
+- ⚠️ **Terminal-tool note (retired v0.16.1):** the earlier "prefers prose over terminal
   respond()" diagnosis was **wrong** — the 2026-06-27 eval ran under the v0.7.4 respond()-
-  conversion bug, so any respond() calls were eaten by the proxy and counted as prose.
-  The `respond()` 2×/150 figure is unreliable for the same reason. Re-eval pending.
+  conversion bug, so respond() calls were eaten by the proxy and counted as prose. The
+  re-eval (2026-08-08) shows **150/150 completion** — the prose behavior was entirely the bug.
 
 ## Boot Commands
 

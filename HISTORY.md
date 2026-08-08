@@ -1,5 +1,26 @@
 # Session History
 
+## 2026-08-08 — Re-eval of all models under v0.16.1 (respond() fix) — done
+- Re-ran full 150-run Forge eval (proxy mode) for Qwen3.5-9B, Ornith, LFM2.5 on the isolated
+  stack (:8090/:8082). The systemd service shares the launcher pid file with cg server start
+  and auto-restarted 60s after stop (killed two runs mid-way) — temporarily moved the unit
+  file away for the window, restored after.
+- **Results (v0.16.1):**
+  | Model | Completion | Accuracy |
+  |---|---|---|
+  | Qwen3.5-9B | **150/150 (100%)** | 138/150 (92%) |
+  | Ornith-1.0-9B | **150/150 (100%)** | **143/150 (95%) — top** |
+  | Qwen3.6-27B | **149/150 (99.3%)** | 141/150 (94%) |
+  | LFM2.5-2.6B | 139/150 (92.7%) | 100/140 (71%) |
+- tool_selection restored 0/5 → 5/5 for Qwen3.5-9B/Ornith/Qwen3.6-27B (the bug was the entire
+  delta from 93%). **LFM2.5's tool_selection 0/10 is GENUINE** (never calls respond(); 0
+  pass-throughs in proxy log) and its 0% data-heavy accuracy stands — card caveat confirmed.
+- Shared weakness across all local models: data-heavy recovery scenarios 0-60% accuracy.
+- Runs (gitignored): 2026-08-08_142633Z (Qwen3.5), 2026-08-08_144837Z (Ornith),
+  2026-08-08_153811Z (LFM2.5); Qwen3.6: 2026-08-07_151927Z.
+- Docs updated: docs/models.md (comparison table + per-model corrected numbers),
+  README.md, CLAUDE.md, BACKLOG.md investigation closed.
+
 ## 2026-08-07 — v0.16.1: fix proxy eating respond() calls (terminal-tool workflows)
 - **Bug:** since v0.7.4 (2026-06-01) the proxy converted respond()→text even when the agent
   declared a respond tool. Every terminal-tool workflow (Forge evals, custom respond() agents)
