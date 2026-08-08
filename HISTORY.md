@@ -1,5 +1,21 @@
 # Session History
 
+## 2026-08-08 — v0.16.2 released: honest presentation + measured results
+- Full release protocol executed: v0.16.2 (13 rules, corrected eval tables, respond() bug
+  story, limitations) pushed + tagged + CI-published to PyPI + GitHub Release created.
+- v0.16.1 was published with the pre-rewrite README (tag pushed before the rewrite);
+  PyPI shows the latest version's description so v0.16.2's honest README is the public face.
+
+## 2026-08-08 — Presentation rewrite (honest, non-commercial README)
+- Rewrote README.md from a feature/marketing list into a direct, honest presentation:
+  value prop, "what it isn't" scoping, all 13 rules (was silently missing dup_write + lint),
+  measured eval tables with run IDs + dates, the respond() bug story with real log lines,
+  model guidance, real worker-use section, and an explicit limitations/footguns section.
+- pyproject description aligned to the same tone ("A safety + reliability proxy...").
+- ⚠️ v0.16.1 was pushed+tagged before the rewrite (user said "wait" after the tag push) —
+  the old README is live on PyPI for 0.16.1. Plan: ship the new presentation as v0.16.2
+  (PyPI shows the latest version's description), optionally yank 0.16.1. Awaiting user go.
+
 ## 2026-08-08 — Re-eval of all models under v0.16.1 (respond() fix) — done
 - Re-ran full 150-run Forge eval (proxy mode) for Qwen3.5-9B, Ornith, LFM2.5 on the isolated
   stack (:8090/:8082). The systemd service shares the launcher pid file with cg server start
