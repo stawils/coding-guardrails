@@ -41,6 +41,7 @@ coverage.xml
 plans/
 research/
 eval/
+reports/social-media/
 .pi/
 .pi-subagents/
 patches/pi-subagents/.patch
