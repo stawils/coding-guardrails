@@ -42,7 +42,7 @@ Agent → :8081 (our proxy)
 | `proxy/server.py` | Asyncio HTTP server, `/v1/chat/completions` |
 | `middleware.py` | Composes all rules, `check()` / `record()` API |
 | `cli.py` | `coding-guardrails serve` CLI |
-| `rules/` | 12 guardrail rules |
+| `rules/` | 13 guardrail rules |
 
 ### Guardrail Rules
 

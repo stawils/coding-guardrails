@@ -1,6 +1,6 @@
 # Rules Reference
 
-coding-guardrails ships with 12 guardrail rules, each independently configurable.
+coding-guardrails ships with 13 guardrail rules, each independently configurable.
 
 ## Rule Behavior
 

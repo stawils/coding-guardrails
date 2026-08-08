@@ -135,7 +135,7 @@ Rules can be:
 | `proxy/client.py` | SafeLlamafileClient (max_tokens forwarding) |
 | `server/` | `cg server` — build, download, start/stop, version |
 | `middleware.py` | Rule composition, `check()` / `record()` API |
-| `rules/*.py` | 11 individual rule implementations |
+| `rules/*.py` | 13 individual rule implementations |
 | `config.py` | YAML config loading with env var expansion |
 | `models/profiles.py` | Model hardware and sampling characteristics |
 | `eval.py` | Eval scenario runner |
