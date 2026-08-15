@@ -12,6 +12,7 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
+| **Qwen3.8-27B** | UD-Q3_K_XL | 13.44 GB | 18.5 GB | **128K** | 27B | Dense (hybrid) | MTP ~fast |
 
 ## Forge eval results (v0.16.1 — respond() pass-through fix, 150 runs, proxy mode)
 
@@ -84,6 +85,31 @@ default (MTP speed, 200K ctx, 100% completion); Ornith leads accuracy.
 - ⚠️ **GPU allocator state matters:** if `cg server start` fails with `cudaMalloc failed: out of memory`
   on small buffers, the driver's memory is fragmented (many prior large load/unload cycles). A reboot
   clears it; 56K-64K q8_0 KV becomes loadable again in a fresh state.
+
+## Qwen3.8-27B (128K context on 24 GB, MTP)
+
+- **Released Aug 2026**, Apache-2.0. Same `qwen3_5` hybrid arch as Qwen3.5-9B — MTP
+  speculative decoding works (`--spec-type draft-mtp`).
+- **Measured 2026-08-15 (Forge eval, proxy mode, 150 runs): 150/150 completion (100%),
+  148/150 correctness (99%) — best result ever on this harness** (vs Qwen3.5-9B
+  150/150/100% completion, 92% correctness; Qwen3.6-27B 99.3%/94%). Scored 100% on
+  every family smaller models fail: `tool_selection`, `data_gap_recovery_extended`,
+  `argument_transformation`, `inconsistent_api_recovery`, `grounded_synthesis`. Only 2
+  misses total (compaction_chain_p1/p2, 4/5 each).
+  Full analysis: [../plans/2026-08-05_qwen3.8-27b-research.md](../plans/2026-08-05_qwen3.8-27b-research.md).
+- Dense 27B, 64 layers: 48 Gated DeltaNet (recurrent, ~no KV) + 16 full-attention
+  (only these grow with ctx) → KV cache stays cheap at long context.
+- Native **262,144 ctx** (1M via YaRN). On the 24 GB card with **UD-Q3_K_XL (13.44 GB)**
+  we run **131072 (128K)** with **q4_0 KV + MTP draft** (~20.5 GB VRAM, ~2 GB headroom;
+  measured 2026-08-05). q8_0 KV + MTP OOMs at 128K; q4_0 KV halves KV and fits the draft.
+  UD-Q4_K_XL (17.9 GB) would cap ctx at ~16-24K — chose context over quant quality.
+- Native vision (images+video) in the source model; we run the text GGUF for agent work.
+- Thinking on by default, per-request disable (`enable_thinking`), `reasoning_effort`,
+  `preserve_thinking` — the proxy already handles these.
+- Sampling (official `generation_config`): temp 1.0, top_k 20, top_p 0.95.
+- Vendor benchmarks vs Qwen3.6-27B: SWE-bench Pro 61.7 (vs 53.5), Terminal-Bench 2.1
+  73.0 (vs 63.4), DeepSWE 1.1 42.2 (vs 13.3), QwenSWEBench 79.0 (vs 49.3),
+  LiveCodeBench v6 90.3, GPQA Diamond 89.2.
 
 ## Qwen3.5-9B (Default) ⭐
 
@@ -189,6 +215,19 @@ llama-server \
   --port 8080 -c 128000 \
   --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1
 ```
+
+### Qwen3.8-27B (128K context on 24 GB, MTP)
+
+```bash
+llama-server \
+  -m Qwen3.8-27B-UD-Q3_K_XL.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 131072 \
+  -ctk q4_0 -ctv q4_0 \
+  --spec-type draft-mtp -np 1
+```
+
+> **Notes:** q4_0 KV is required for 128K + MTP on 24 GB (q8_0 KV + MTP OOMs).
 
 > **Notes:** No `--spec-type draft-mtp` — the official Ornith GGUF has no MTP tensors.
 > Reasoning model: enable a reasoning parser if driving llama-server directly; the

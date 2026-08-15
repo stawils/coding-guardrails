@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 547 tests, ~2s
+pytest tests/unit/ -q          # 557 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -131,7 +131,23 @@ for shared-GPU systems. The systemd unit bakes this in.
 #   To rebuild: cd ~/llama.cpp && git pull && cmake -S . -B build -DGGML_CUDA=ON -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 24 --target llama-server
 LLAMA=~/llama.cpp/llama-server
 
-# Qwen3.5-9B-MTP (current default — best tool-calling reliability)
+# Qwen3.8-27B UD-Q3_K_XL (DEFAULT worker — 128K ctx, MTP, best-measured)
+#   Released Aug 2026, Apache-2.0, same qwen3_5 hybrid arch as Qwen3.5-9B (48
+#   Gated DeltaNet + 16 full-attn layers → cheap KV at long ctx). Native 256K ctx;
+#   128K on 24 GB. MTP spec decoding (~68 tok/s gen, ~3 tok/draft).
+#   MEASURED 2026-08-15 Forge eval (proxy mode, 150 runs): 150/150 completion
+#   (100%), 148/150 correctness (99%) — best ever on this harness, vs Qwen3.5-9B
+#   100%/92% and Qwen3.6-27B 99.3%/94%. Only misses: compaction_chain_p1/p2 (4/5 each).
+#   VRAM: incremental ~18 GB @128K q4_0 KV + MTP (gate value 18.5). q8_0 KV + MTP
+#   OOMs at 128K; q4_0 KV halves KV and fits the draft. This is the systemd
+#   default on :8081 (coding-guardrails up --model Qwen3.8-27B-UD-Q3_K_XL).
+$LLAMA \
+  -m ~/.cache/lm-studio/models/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf \
+  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 \
+  --spec-type draft-mtp -np 1 -v
+
+# Qwen3.5-9B-MTP (previous default — best tool-calling reliability at 9B)
 #   Hybrid SSM/Transformer arch (qwen35), 33 layers. MTP = Multi-Token Prediction:
 #   `--spec-type draft-mtp` uses the model's built-in MTP head as a draft model for
 #   speculative decoding (~1.5-2x faster generation, no separate draft model, no
@@ -230,11 +246,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 547 tests
+pytest tests/unit/ -q              # All 557 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 547 tests must pass before committing.
+All 557 tests must pass before committing.
 
 ## Eval
 
@@ -262,7 +278,7 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 547 unit tests must pass
+- All 557 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -293,7 +309,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 547 tests MUST pass
+pytest tests/unit/ -q          # All 557 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

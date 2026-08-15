@@ -68,6 +68,36 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 0.6, "top_k": 20, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
+    # ── Qwen3.8-27B (Dense, 27B, 256K ctx, MTP, qwen3_5 arch) ──
+    # Released Aug 2026. Same qwen3_5 hybrid arch as Qwen3.5-9B (MTP supported).
+    # 64 layers: 48 Gated DeltaNet (recurrent, ~no KV) + 16 full-attention (KV
+    # grows only there) — cheap KV for long ctx. Native 262144 ctx, 1M via YaRN.
+    # Multimodal (vision+video) in the source model; text-only GGUF for agent use.
+    # 27B BF16 = ~54 GB — impossible on 24 GB. UD-Q3_K_XL (13.44 GB) is the max
+    # ctx play: 131072 (128K) with q4_0 KV + MTP draft fits the 24 GB card with
+    # ~2 GB headroom (measured: 20.5 GB used / 2.1 free). q8_0 KV + MTP OOMs at
+    # 128K (model loaded but decode graph exceeded free VRAM); q4_0 KV halves KV
+    # (16 KiB/token) and frees room for the MTP draft. UD-Q4_K_XL (17.9 GB)
+    # would cap ctx at ~16-24K — wasted for a 256K-native long-horizon model.
+    # Sampling = official generation_config (temp 1.0, top_k 20, top_p 0.95).
+    # Vendor: SWE-bench Pro 61.7, Terminal-Bench 73.0, LiveCodeBench 90.3,
+    # GPQA 89.2 — sizable agentic gains over Qwen3.6-27B. Apache-2.0.
+    "Qwen3.8-27B-UD-Q3_K_XL": ModelProfile(
+        name="Qwen3.8-27B-UD-Q3_K_XL",
+        family="Qwen3.8",
+        quant="UD-Q3_K_XL",
+        file_size_gb=13.44,
+        vram_required_gb=18.5,  # incremental footprint @128K q4_0 KV + MTP (17.9 GB
+        # measured); gate compares against FREE VRAM, not total-with-baseline
+        context_tokens=131072,
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=61.7,
+        sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q4_0", "-ctv", "q4_0",
+                     "--spec-type", "draft-mtp", "-np", "1"],
+    ),
     # ── LFM2.5-2.6B (Dense hybrid, 2.6B params, 128K ctx, BF16) ──
     # Liquid AI LFM2.5 — agentic post-trained (RL inside agentic harnesses).
     # Hybrid arch: 22 double-gated short-conv blocks + 8 GQA attention layers.
