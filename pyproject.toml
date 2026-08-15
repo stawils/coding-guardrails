@@ -40,8 +40,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "pytest-asyncio",
-    "pytest-hypothesis",
-    "hypothesis",
+    "hypothesis",  # ships the pytest plugin; pytest-hypothesis does not exist on PyPI
     "ruff",
     "mypy",
 ]
