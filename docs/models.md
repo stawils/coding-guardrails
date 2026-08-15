@@ -7,31 +7,34 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
+| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (MTP) | 13.44 GB | 19.0 GB | **128K** (q4_0 KV) | 27B | Dense (hybrid) | ~68 tok/s |
 | **Qwen3.6-27B** | UD-Q4_K_XL | 17.9 GB | 19.5 GB | **48K** (q8_0 KV) | 27B | Dense (hybrid) | ~20-30 tok/s |
-| **Qwen3.5-9B** ⭐ | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
+| **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
-| **Qwen3.8-27B** | UD-Q3_K_XL | 13.44 GB | 18.5 GB | **128K** | 27B | Dense (hybrid) | MTP ~fast |
 
-## Forge eval results (v0.16.1 — respond() pass-through fix, 150 runs, proxy mode)
+## Forge eval results (150 runs, proxy mode)
 
-All numbers corrected under the v0.16.1 fix (2026-08-08 re-eval). The v0.7.4 bug
-(proxy converting declared respond() calls to text) had zeroed tool_selection 0/5
-for every model — earlier "prose quirk" diagnoses for Qwen3.5-9B/Ornith/Qwen3.6-27B
-were wrong. LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
+All numbers are recorded runs on the same local GPU. The v0.7.4 respond() bug
+(proxy converting declared respond() calls to text) had zeroed tool_selection
+0/5 for every model — earlier "prose quirk" diagnoses for Qwen3.5-9B/Ornith/
+Qwen3.6-27B were wrong; the v0.16.1 fix re-evaluated them (2026-08-08).
+LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 
 | Model | Completion | Accuracy | Run |
 |---|---|---|---|
+| **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** — best | 2026-08-15_000804Z |
 | **Qwen3.5-9B** | **150/150 (100%)** | 138/150 (92%) | 2026-08-08_142633Z |
-| **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** — top | 2026-08-08_144837Z |
+| **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** | 2026-08-08_144837Z |
 | **Qwen3.6-27B** | **149/150 (99.3%)** | 141/150 (94%) | 2026-08-07_151927Z |
 | **LFM2.5-2.6B** | 139/150 (92.7%) | 100/140 (71%) — card caveat confirmed | 2026-08-08_153811Z |
 
-Shared weakness across all local models: data-heavy recovery scenarios
+Shared weakness across the smaller models: data-heavy recovery scenarios
 (`data_gap_recovery_extended`, `argument_transformation`, `inconsistent_api_recovery`,
-`grounded_synthesis` all score ~0-60% accuracy; LFM2.5 0%). Qwen3.5-9B stays the
-default (MTP speed, 200K ctx, 100% completion); Ornith leads accuracy.
+`grounded_synthesis` score ~0-60% accuracy; LFM2.5 0%). **Qwen3.8-27B closes that
+gap — 100% on all four families** — which is why it is the new default worker
+(128K ctx, MTP speed, vision-capable). Qwen3.5-9B remains the fast 200K fallback.
 
 
 ## LFM2.5-2.6B (BF16 — maximum precision, 128K context)

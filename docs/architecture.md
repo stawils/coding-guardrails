@@ -147,7 +147,7 @@ The proxy produces structured, readable logs:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 >> POST /v1/chat/completions
-   msgs=30 tools=6 stream=True model=Qwen3.5-9B-UD-Q4_K_XL
+   msgs=30 tools=6 stream=True model=Qwen3.8-27B-UD-Q3_K_XL
 
 ──────────────────── ▸ LAYER 1 · Forge ◂ ────────────────────
 🔧 Calling model (7 tools, 30 msgs, max 3 retries)

@@ -38,11 +38,12 @@ coding-guardrails server stop       # SIGTERM the running server
 # 1. Build (CUDA auto-detected; ~20-40 min first time, incremental after)
 coding-guardrails server build
 
-# 2. Download a model (gemma-4-26B A4B QAT is the recommended default)
-coding-guardrails server download gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
+# 2. Download a model (Qwen3.8-27B is the recommended default — measured
+#    100% completion / 99% accuracy; vision-capable)
+coding-guardrails server download Qwen3.8-27B-UD-Q3_K_XL
 
 # 3. Start the backend
-coding-guardrails server start --model gemma-4-26B-A4B-it-qat-UD-Q4_K_XL
+coding-guardrails server start --model Qwen3.8-27B-UD-Q3_K_XL
 
 # 4. Start the proxy on top of it
 coding-guardrails serve \

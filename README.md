@@ -54,9 +54,9 @@ policy. Neither requires rewriting your agent.
 pip install coding-guardrails
 
 coding-guardrails server build                                          # builds cg's llama-server (pinned commit; includes the Gemma 4 tool-call fix)
-coding-guardrails server start --model Qwen3.5-9B-UD-Q4_K_XL           # LLM backend on :8080
+coding-guardrails server start --model Qwen3.8-27B-UD-Q3_K_XL           # LLM backend on :8080 (default — measured 100% completion / 99% accuracy)
 coding-guardrails serve --backend-url http://localhost:8080 \
-  --model Qwen3.5-9B-UD-Q4_K_XL --port 8081                           # proxy on :8081
+  --model Qwen3.8-27B-UD-Q3_K_XL --port 8081                            # proxy on :8081
 
 # Point your agent at http://localhost:8081/v1
 ```
@@ -107,11 +107,14 @@ tool-calling eval (150 runs) through the proxy against each supported model.
 Every number below is from a recorded run — timestamps and run IDs included —
 and the eval is reproducible (`eval/scripts/run_forge_eval.py`, proxy mode).
 
-All numbers are under **v0.16.1** (2026-08-07/08, local GPU, proxy mode):
+All numbers are recorded runs on the same local GPU (proxy mode). The
+Qwen3.8-27B row is **v0.17.0** (2026-08-15); the rest are the **v0.16.1**
+re-eval (2026-08-07/08) after the respond() fix:
 
 | Model | Completion | Accuracy | Run |
 |---|---|---|---|
-| Qwen3.5-9B (default) | **150/150 (100%)** | 138/150 (92%) | `2026-08-08_142633Z` |
+| **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** | `2026-08-15_000804Z` |
+| Qwen3.5-9B | **150/150 (100%)** | 138/150 (92%) | `2026-08-08_142633Z` |
 | Ornith-1.0-9B | **150/150 (100%)** | **143/150 (95%)** | `2026-08-08_144837Z` |
 | Qwen3.6-27B | **149/150 (99.3%)** | 141/150 (94%) | `2026-08-07_151927Z` |
 | LFM2.5-2.6B | 139/150 (92.7%) | 100/140 (71%) | `2026-08-08_153811Z` |
@@ -123,18 +126,19 @@ run can complete and be wrong (the accuracy gap) or fail to complete at all
 
 **Known weaknesses, stated plainly:**
 
-- **Data-heavy recovery is weak across *every* local model we tested.** The
+- **Data-heavy recovery was weak across every model — until Qwen3.8-27B.** The
   `data_gap_recovery_extended`, `argument_transformation`,
-  `inconsistent_api_recovery`, and `grounded_synthesis` scenarios score 0-60%
+  `inconsistent_api_recovery`, and `grounded_synthesis` scenarios scored 0-60%
   accuracy on Qwen3.5-9B, Ornith, and Qwen3.6-27B alike, and 0% on LFM2.5.
-  Synthesis from many sources into a precise report is a frontier-model task;
-  none of these 9B-27B local models do it reliably yet.
+  Qwen3.8-27B is the first model we measured that **closes that gap: 100% on
+  all four families** — which is why it is now the default worker. Multi-source
+  synthesis into a precise report is still frontier-hard for anything smaller.
 - **LFM2.5-2.6B is genuinely not suited to agentic coding** — its 0/10 on
   `tool_selection` is real (it never calls the terminal tool; the proxy log
   shows zero terminal calls across all runs), matching the model card's own
   caveat. Use it for bounded, structured tasks or not at all.
-- **Completion ≈100% ≠ correctness.** Two of these models complete every run;
-  the correctness ceiling is 92-95%.
+- **Completion ≈100% ≠ correctness** — except for Qwen3.8-27B (100% / 99%).
+  For every other model we measured, the correctness ceiling is 92-95%.
 
 ### We measure ourselves too — the respond() bug
 
@@ -167,13 +171,24 @@ can catch our own regressions.
 Model profiles live in `src/coding_guardrails/models/profiles.py` — sampling
 defaults, boot flags, VRAM requirements, and context limits per GGUF.
 
-| Model | Size | VRAM | Context | Speed | Eval (v0.16.1) | When to use |
+| Model | Size | VRAM | Context | Speed | Eval | When to use |
 |---|---|---|---|---|---|---|
-| **Qwen3.5-9B** ⭐ | 5.7 GB | 18 GB | 200K | ~53 tok/s (MTP) | 100% / 92% acc | **Default.** Fastest, proven, best all-round |
-| **Ornith-1.0-9B** | 9.5 GB | 18 GB | 200K | ~50 tok/s | 100% / **95% acc** | Best accuracy; reasoning model |
+| **Qwen3.8-27B** ⭐ | 13.44 GB | 19 GB | **128K** | ~68 tok/s (MTP) | **100% / 99% acc** | **Default.** Best measured agent on the harness; vision-capable |
+| **Qwen3.5-9B** | 5.7 GB | 18 GB | 200K | ~53 tok/s (MTP) | 100% / 92% acc | Fast fallback; longest context (200K) |
+| **Ornith-1.0-9B** | 9.5 GB | 18 GB | 200K | ~50 tok/s | 100% / **95% acc** | Best 9B accuracy; reasoning model |
 | **Qwen3.6-27B** | 17.9 GB | 19.5 GB | **48K** | ~20-30 tok/s | 99.3% / 94% acc | Highest capability when 48K suffices |
 | **Gemma 4 26B A4B QAT** | 14.25 GB | 19.8 GB | 200K | ~40+ tok/s | — | Highest raw capability; prone to thinking loops |
 | **LFM2.5-2.6B** | 5.4 GB | 9 GB | 128K | ~113 tok/s | 92.7% / 71% acc | Bounded tasks only (card caveat confirmed) |
+
+### Vision (multimodal)
+
+Qwen3.8-27B is natively multimodal (images; hour-scale video is vLLM/SGLang
+territory — unsupported on llama.cpp). `server start` auto-attaches a sibling
+`mmproj-*.gguf` next to the model, and the proxy captions inbound images
+(`[image: caption]` text blocks) so vision works through the text-only
+guardrail pipeline — verified end-to-end through the proxy on 2026-08-15
+(image → caption → correct answer). Disable captioning with
+`--no-vision-captioning`; text-only backends degrade to a placeholder.
 
 Full details, boot commands, and per-model caveats:
 [docs/models.md](docs/models.md).
@@ -206,7 +221,9 @@ down.
   256`) is sized to fit the fragmented state, not the ideal one.
 - **24 GB VRAM is the practical ceiling.** Qwen3.6-27B is capped at 48K
   context (56K+ needs a single KV allocation the fragmented allocator can't
-  provide). 200K context is only realistic for the 9B-class models.
+  provide). Qwen3.8-27B (UD-Q3_K_XL + q4_0 KV + MTP + mmproj) runs **128K on
+  the same card** — its hybrid architecture keeps the KV cache cheap. 200K
+  context is still only realistic for the 9B-class models.
 - **Local models are local models.** The eval tables above are the honest
   picture: excellent at tool plumbing, weak at multi-source synthesis.
 - **The lint gate runs on every edited file.** If you don't lint your code,
@@ -223,7 +240,7 @@ limits; workspace root for path safety; secret patterns. Full reference in
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 556 tests, ~25s
+pytest tests/unit/ -q          # 564 tests, ~25s
 python eval/scripts/run_forge_eval.py --mode proxy --runs 5   # the eval behind the tables above
 ```
 
