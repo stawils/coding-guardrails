@@ -104,6 +104,10 @@ default (MTP speed, 200K ctx, 100% completion); Ornith leads accuracy.
   measured 2026-08-05). q8_0 KV + MTP OOMs at 128K; q4_0 KV halves KV and fits the draft.
   UD-Q4_K_XL (17.9 GB) would cap ctx at ~16-24K — chose context over quant quality.
 - Native vision (images+video) in the source model; we run the text GGUF for agent work.
+  The launcher auto-attaches a sibling `mmproj-*.gguf`, and the proxy captions inbound
+  images (`[image: caption]` text blocks) so vision works through the text-only guardrail
+  pipeline — verified 2026-08-15 through :8081 ("Red square; text: SQUARE = 42").
+  Hour-scale video is vLLM/SGLang territory; unsupported on llama.cpp.
 - Thinking on by default, per-request disable (`enable_thinking`), `reasoning_effort`,
   `preserve_thinking` — the proxy already handles these.
 - Sampling (official `generation_config`): temp 1.0, top_k 20, top_p 0.95.

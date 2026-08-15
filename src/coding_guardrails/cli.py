@@ -45,6 +45,8 @@ def main() -> None:
               help="Safety margin (GB) of free VRAM required above the model's footprint before loading. Lower for tight GPUs with a known baseline; the model must still fit. Default 2.")
 @click.option("--auto-no-thinking/--no-auto-no-thinking", default=True,
               help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. Tool requests keep thinking on. Default on.")
+@click.option("--vision-captioning/--no-vision-captioning", default=True,
+              help="Caption inbound images via the (multimodal) backend and substitute text blocks — the guardrails pipeline is text-only. Requires the backend to run with an mmproj. Default on.")
 def serve(
     backend_url: str,
     model: str,
@@ -63,6 +65,7 @@ def serve(
     queue_timeout: float,
     vram_margin: float,
     auto_no_thinking: bool,
+    vision_captioning: bool,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -104,6 +107,7 @@ def serve(
             queue_timeout=queue_timeout,
             vram_margin=vram_margin,
             auto_no_thinking=auto_no_thinking,
+            vision_captioning=vision_captioning,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -125,6 +129,7 @@ async def _run_proxy(
     queue_timeout: float = 120.0,
     vram_margin: float = 2.0,
     auto_no_thinking: bool = True,
+    vision_captioning: bool = True,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -203,6 +208,7 @@ async def _run_proxy(
         model_name=model,
         backend_manager=backend_manager,
         auto_no_thinking=auto_no_thinking,
+        vision_captioning=vision_captioning,
     )
     await server.start()
     click.echo(f"\n  Proxy ready at http://{host}:{port}")

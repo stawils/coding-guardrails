@@ -85,6 +85,20 @@ def _resolve_model(profile_name: str) -> Path:
     return path
 
 
+def _find_mmproj(model_path: Path) -> Path | None:
+    """Locate a vision projector (mmproj-*.gguf) sitting next to the model.
+
+    Multimodal models (e.g. Qwen3.8-27B) ship the text GGUF plus a projector
+    in the same repo/cache dir. Attaching it makes the backend vision-capable
+    so the proxy's image captioning can actually see images.
+    """
+    if not model_path.parent.exists():
+        return None
+    for candidate in sorted(model_path.parent.glob("mmproj-*.gguf")):
+        return candidate
+    return None
+
+
 def build_argv(
     profile_name: str,
     *,
@@ -124,6 +138,12 @@ def build_argv(
         str(port),
     ]
     argv.extend(profile.boot_flags)
+    # Auto-attach a vision projector if one ships next to the model (multimodal
+    # backends — Qwen3.8-27B etc.). Placed before user extras so an explicit
+    # --mmproj in `extra` can override.
+    mmproj = _find_mmproj(gguf)
+    if mmproj is not None:
+        argv += ["--mmproj", str(mmproj)]
     if extra:
         argv.extend(extra)
     return argv

@@ -5,6 +5,12 @@
 # Set to "." for current directory, or an absolute path.
 workspace: "."
 
+# ── Vision captioning (proxy-level, not a guardrail rule) ──
+# Multimodal backends (Qwen3.8-27B with mmproj) caption inbound images and the
+# proxy substitutes [image: caption] text — the guardrail pipeline is text-only.
+# Toggle via the serve flag: --vision-captioning / --no-vision-captioning
+# (default on). Backends without an mmproj degrade gracefully to a placeholder.
+
 path_safety:
   enabled: true
   # Paths that are always blocked (even inside workspace)

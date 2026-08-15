@@ -10,6 +10,7 @@ Chain of responsibility:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -87,6 +88,98 @@ def _extract_sampling(body: dict[str, Any]) -> dict[str, Any] | None:
     else:
         extracted.pop("max_completion_tokens", None)
     return extracted or None
+
+
+# ── Vision captioning (image → caption → text) ──────────────────────────────
+# Multimodal backends (e.g. Qwen3.8-27B with an mmproj attached) can see
+# images, but the guardrails message pipeline is text-only (Forge's converter
+# drops image_url blocks). So before conversion we ask the backend to caption
+# each inbound image and substitute a text block: [image: <caption>]. The
+# main request stays text-only; the caption call goes straight to the backend.
+_VISION_CAPTION_PROMPT = (
+    "Describe this image in 1-2 concise sentences for an AI coding agent. "
+    "Report visible text, numbers, shapes, UI elements, or diagrams exactly. "
+    "Do not speculate beyond what is visible."
+)
+_VISION_MAX_TOKENS = 256
+_VISION_TIMEOUT = 60.0
+
+
+def _image_urls_in(content: Any) -> list[str]:
+    """Extract image_url values from OpenAI list-style content."""
+    if not isinstance(content, list):
+        return []
+    return [
+        (b.get("image_url") or {}).get("url", "")
+        for b in content
+        if isinstance(b, dict) and b.get("type") == "image_url"
+    ]
+
+
+async def _caption_image_url(client: LLMClient, image_url: str) -> str:
+    """Ask the (multimodal) backend to caption one image. Returns '' on failure."""
+    http = getattr(client, "_http", None)
+    base = getattr(client, "base_url", "")
+    if http is None or not base:
+        return ""
+    body: dict[str, Any] = {
+        "model": "vision-caption",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": image_url}},
+                {"type": "text", "text": _VISION_CAPTION_PROMPT},
+            ],
+        }],
+        "max_tokens": _VISION_MAX_TOKENS,
+        "temperature": 0.1,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    try:
+        resp = await asyncio.wait_for(
+            http.post(f"{base}/chat/completions", json=body),
+            timeout=_VISION_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            logger.warning("vision caption failed (HTTP %s)", resp.status_code)
+            return ""
+        data = resp.json()
+        return (data["choices"][0]["message"].get("content") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — degrade, never kill the request
+        logger.warning("vision caption error: %s", exc)
+        return ""
+
+
+async def caption_images_in_messages(
+    openai_messages: list[dict[str, Any]],
+    client: LLMClient,
+    *,
+    captioner=None,
+) -> list[dict[str, Any]]:
+    """Replace image_url blocks with '[image: caption]' text blocks.
+
+    Each image is captioned once via the backend. On failure a placeholder
+    keeps the request alive (e.g. text-only backend without mmproj).
+    """
+    caption = captioner or (lambda url: _caption_image_url(client, url))
+    out: list[dict[str, Any]] = []
+    for msg in openai_messages:
+        content = msg.get("content")
+        if not _image_urls_in(content):
+            out.append(msg)
+            continue
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": content}]
+        new_blocks: list[dict[str, Any]] = []
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "image_url":
+                url = (block.get("image_url") or {}).get("url", "")
+                caption_text = await caption(url) if url else ""
+                text = f"[image: {caption_text}]" if caption_text else "[image: (unavailable)]"
+                new_blocks.append({"type": "text", "text": text})
+            else:
+                new_blocks.append(block)
+        out.append({**msg, "content": new_blocks})
+    return out
 
 
 def _extract_tool_specs(request_tools: list[dict[str, Any]] | None) -> list[ToolSpec]:
@@ -181,6 +274,7 @@ async def handle_chat_completions(
     max_retries: int = 3,
     rescue_enabled: bool = True,
     auto_no_thinking: bool = True,
+    vision_captioning: bool = True,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Handle /v1/chat/completions with Forge Layer 1 + our Layer 2.
 
@@ -193,6 +287,13 @@ async def handle_chat_completions(
     is_stream = body.get("stream", False)
     model_name = body.get("model", "coding-guardrails")
     sampling = _extract_sampling(body)
+
+    # Vision captioning: replace image_url blocks with captions before any
+    # processing (Forge's converter would otherwise drop the images entirely).
+    # The backend must be multimodal (mmproj attached) for captions to work;
+    # otherwise each image degrades to a placeholder and the request proceeds.
+    if vision_captioning:
+        openai_messages = await caption_images_in_messages(openai_messages, client)
 
     # Reset stateful rules on new conversations.
     # Detect new conversation: no assistant messages in history (no prior

@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 557 tests, ~2s
+pytest tests/unit/ -q          # 564 tests, ~2s
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -138,9 +138,13 @@ LLAMA=~/llama.cpp/llama-server
 #   MEASURED 2026-08-15 Forge eval (proxy mode, 150 runs): 150/150 completion
 #   (100%), 148/150 correctness (99%) — best ever on this harness, vs Qwen3.5-9B
 #   100%/92% and Qwen3.6-27B 99.3%/94%. Only misses: compaction_chain_p1/p2 (4/5 each).
-#   VRAM: incremental ~18 GB @128K q4_0 KV + MTP (gate value 18.5). q8_0 KV + MTP
+#   VRAM: incremental ~18.9 GB @128K q4_0 KV + MTP + mmproj (gate 19.0). q8_0 KV + MTP
 #   OOMs at 128K; q4_0 KV halves KV and fits the draft. This is the systemd
 #   default on :8081 (coding-guardrails up --model Qwen3.8-27B-UD-Q3_K_XL).
+#   VISION: the launcher auto-attaches a sibling mmproj-*.gguf (multimodal),
+#   and the proxy captions inbound images → [image: caption] text (Option A:
+#   vision through a text-only guardrail pipeline). Verified 2026-08-15 through
+#   :8081. Video (hour-scale) is vLLM/SGLang territory — unsupported on llama.cpp.
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf \
   -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
@@ -246,11 +250,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 557 tests
+pytest tests/unit/ -q              # All 564 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 557 tests must pass before committing.
+All 564 tests must pass before committing.
 
 ## Eval
 
@@ -278,7 +282,7 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 557 unit tests must pass
+- All 564 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -309,7 +313,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 557 tests MUST pass
+pytest tests/unit/ -q          # All 564 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.
