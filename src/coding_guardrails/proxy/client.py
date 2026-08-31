@@ -17,6 +17,7 @@ upgrade instead of being shadowed by a copy of stale internals.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -25,6 +26,45 @@ from forge.core.workflow import LLMResponse, ToolSpec
 from forge.errors import BackendError
 
 from coding_guardrails.proxy.handler import _normalize_message_roles
+
+
+def _coerce_wire_tool_args(openai_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Coerce assistant tool_calls arguments from JSON strings to objects.
+
+    Forge's openai-format folding serializes tool-call arguments as JSON
+    strings, but llama-server's qwen3_5 jinja template raises at generation
+    time ("Tool call arguments for function X were passed as a JSON string")
+    — so any multi-turn history containing assistant tool_calls 400s on the
+    next turn. Normalize at the final wire boundary (2026-08-31 reliability
+    session: cg-worker's deep 43-message loop exposed it). Mirror of forge's
+    own Ollama-client coercion (0.7.6) at our boundary.
+    """
+    changed = False
+    out: list[dict[str, Any]] = []
+    for m in openai_messages:
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            out.append(m)
+            continue
+        tcs = m.get("tool_calls")
+        if not isinstance(tcs, list) or not tcs:
+            out.append(m)
+            continue
+        new_tcs: list[Any] = []
+        for tc in tcs:
+            if not isinstance(tc, dict):
+                new_tcs.append(tc)
+                continue
+            func = tc.get("function")
+            if isinstance(func, dict) and isinstance(func.get("arguments"), str):
+                try:
+                    parsed = json.loads(func["arguments"])
+                    tc = {**tc, "function": {**func, "arguments": parsed}}
+                    changed = True
+                except json.JSONDecodeError:
+                    pass
+            new_tcs.append(tc)
+        out.append({**m, "tool_calls": new_tcs} if changed else m)
+    return out if changed else openai_messages
 
 
 class SafeLlamafileClient(LlamafileClient):
@@ -187,7 +227,9 @@ class SafeLlamafileClient(LlamafileClient):
         docstring). Only the outbound role invariant and the acceptance prefill
         are applied here; everything else is inherited.
         """
-        prepared = self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        prepared = _coerce_wire_tool_args(
+            self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        )
         try:
             return await super()._send_native(
                 prepared, tools=tools, sampling=sampling, passthrough=passthrough,
@@ -209,7 +251,9 @@ class SafeLlamafileClient(LlamafileClient):
         extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
         """Thin wrapper: role-normalize + acceptance-prefill, then Forge's prompt path."""
-        prepared = self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        prepared = _coerce_wire_tool_args(
+            self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        )
         try:
             return await super()._send_prompt(
                 prepared, tools=tools, sampling=sampling, passthrough=passthrough,

@@ -31,6 +31,7 @@ from forge.core.messages import (
 from forge.core.workflow import LLMResponse, TextResponse, ToolCall, ToolSpec
 from forge.errors import StreamError, ToolCallError
 from forge.guardrails import ErrorTracker, ResponseValidator
+from forge.guardrails.nudge import TOOL_ERROR_KINDS
 from forge.prompts.templates import rescue_tool_call
 
 logger = logging.getLogger("coding_guardrails.layer1")
@@ -39,6 +40,7 @@ logger = logging.getLogger("coding_guardrails.layer1")
 _NUDGE_KIND_TO_TYPE: dict[str, MessageType] = {
     "retry": MessageType.RETRY_NUDGE,
     "unknown_tool": MessageType.RETRY_NUDGE,
+    "tool_arg_validation": MessageType.RETRY_NUDGE,  # forge 0.9.x malformed-args kind
     "step": MessageType.STEP_NUDGE,
     "prerequisite": MessageType.PREREQUISITE_NUDGE,
 }
@@ -283,16 +285,29 @@ async def run_inference_instrumented(
             else:
                 logger.debug("  Rescue: no tool calls found in text")
 
-        error_tracker.record_retry()
-        if error_tracker.retries_exhausted:
+        # Budget by kind (forge 0.9.x): malformed tool-call arguments consume
+        # the tool-error budget (max_tool_errors); everything else consumes the
+        # retry budget (max_retries). Forgetting this split also crashed on
+        # nudge.kind='tool_arg_validation' (KeyError) before the mapping fix.
+        is_tool_error = nudge.kind in TOOL_ERROR_KINDS
+        if is_tool_error:
+            error_tracker.record_result(success=False)
+            exhausted = error_tracker.tool_errors_exhausted
+            budget_label = f"max_tool_errors={error_tracker.max_tool_errors}"
+        else:
+            error_tracker.record_retry()
+            exhausted = error_tracker.retries_exhausted
+            budget_label = f"max_retries={max_retries}"
+        if exhausted:
             raw = response.content if isinstance(response, TextResponse) else str(
                 [(tc.tool, tc.args) for tc in response]
             )
             logger.warning(
-                "  FAIL: Retries exhausted after %d consecutive failures", max_retries,
+                "  FAIL: Retries exhausted after %d consecutive failures (%s)",
+                max_retries, nudge.kind,
             )
             raise ToolCallError(
-                f"Retries exhausted after {max_retries} consecutive failed attempts",
+                f"Exhausted after {budget_label} consecutive failed attempts ({nudge.kind})",
                 raw_response=raw,
             )
 
@@ -356,10 +371,16 @@ async def run_inference_instrumented(
             messages.append(tc_msg)
             new_messages.append(tc_msg)
 
+            err_prefix = (
+                "[ToolArgValidationError]"
+                if nudge.kind == "tool_arg_validation"
+                else "[UnknownTool]"
+            )
+
             for tc_info in tc_infos:
                 err_msg = Message(
                     MessageRole.TOOL,
-                    f"[UnknownTool] {nudge.content}",
+                    f"{err_prefix} {nudge.content}",
                     MessageMeta(nudge_type, step_index=step_index),
                     tool_name=tc_info.name,
                     tool_call_id=tc_info.call_id,
@@ -367,8 +388,15 @@ async def run_inference_instrumented(
                 messages.append(err_msg)
                 new_messages.append(err_msg)
                 logger.info(
-                    "  Emitted tool-error for unknown tool '%s'", tc_info.name,
+                    "  Emitted tool-error (%s) for tool '%s'", err_prefix, tc_info.name,
                 )
+
+        # Retry corrections rewrite the prompt observed by the completed
+        # attempt; the next policy decision must estimate the changed history.
+        # getattr-guarded: test doubles may not implement every manager method.
+        invalidate = getattr(context_manager, "invalidate_usage", None)
+        if callable(invalidate):
+            invalidate()
 
     # max_attempts exhausted without valid response
     logger.warning("  FAIL: Max attempts (%d) exhausted without valid response", attempt_limit)
