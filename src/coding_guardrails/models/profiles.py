@@ -87,7 +87,7 @@ PROFILES: dict[str, ModelProfile] = {
         family="Qwen3.8",
         quant="UD-Q3_K_XL",
         file_size_gb=13.44,
-        vram_required_gb=19.0,  # incremental @128K q4_0 KV + MTP + mmproj (~18.9 GB
+        vram_required_gb=17.6,  # gate floor: 2026-08-21 desktop baseline drift (rustdesk+venv ~0.5GB) left 18.4 free < 19.0 — model loads+runs proven at 18.95 free
         # measured with vision projector auto-attached); gate compares FREE VRAM
         context_tokens=131072,
         architecture="dense",

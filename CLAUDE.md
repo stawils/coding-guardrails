@@ -17,7 +17,7 @@ Two-layer proxy between agent and LLM:
 ```
 Agent → :8081 (our proxy)
           ├── Layer 1: Forge (rescue, validate, retry, thinking capture)
-          ├── Layer 2: Coding Guardrails (13 rules)
+          ├── Layer 2: Coding Guardrails (15 rules)
           └── → :8080 (llama-server / LLM backend)
 ```
 
@@ -27,7 +27,7 @@ Agent → :8081 (our proxy)
 2. **Preprocessing**: empty user messages fixed, stale assistant text stripped
 3. **Tool enforcement**: for real coding agents (bash/read/edit/write tools), inject guidance
 4. **Layer 1 (Forge)**: run inference with rescue + retry + thinking capture
-5. **Layer 2 (Guardrails)**: check tool calls against 13 rules
+5. **Layer 2 (Guardrails)**: check tool calls against 15 rules
 6. **Response**: blocked calls return text nudge to agent; allowed calls pass through
 7. **Acceptance shaping**: if the model emits an acceptance-report as bare JSON (the F9 prefill makes it emit JSON, but local models drop the fence), the text response is wrapped in the ` ```acceptance-report ` fence Pi's runtime requires; the contract's real criterion id is seeded into the prefill so reports match contracts
 
@@ -42,7 +42,7 @@ Agent → :8081 (our proxy)
 | `proxy/server.py` | Asyncio HTTP server, `/v1/chat/completions` |
 | `middleware.py` | Composes all rules, `check()` / `record()` API |
 | `cli.py` | `coding-guardrails serve` CLI |
-| `rules/` | 13 guardrail rules |
+| `rules/` | 15 guardrail rules |
 
 ### Guardrail Rules
 
@@ -61,6 +61,8 @@ Agent → :8081 (our proxy)
 | `sequencing` | nudge | Test-after-change |
 | `tool_resolution` | nudge | Empty/error results |
 | `lint` | nudge/block | Multi-language lint on edits (ruff/biome/gofmt) — noticing offload |
+| `canary` | block | Context-exfiltration tripwire: unique token planted in system prompt; any tool call echoing it is blocked |
+| `input_scanning` | mark | Prompt-injection signatures in inbound message content (indirect injection via tool results spotlighted) |
 
 ## Production Rules
 
@@ -250,11 +252,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 564 tests
+pytest tests/unit/ -q              # All 664 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 564 tests must pass before committing.
+All 664 tests must pass before committing.
 
 ## Eval
 
@@ -270,6 +272,10 @@ python eval/scripts/run_forge_eval.py --mode proxy --scenario data_gap_recovery_
 
 # Layer 2 guardrails
 python eval/scripts/run_layer2_eval.py
+
+# Adversarial security suite (attack scenarios + benign false-positive checks,
+# deterministic — no LLM, sub-second, CI-able)
+python eval/scripts/run_security_eval.py
 ```
 
 Results go to `eval/runs/<timestamp>/` (gitignored).
@@ -282,7 +288,7 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 564 unit tests must pass
+- All 664 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -313,7 +319,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 564 tests MUST pass
+pytest tests/unit/ -q          # All 664 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

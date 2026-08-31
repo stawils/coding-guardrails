@@ -1,6 +1,6 @@
 # Rules Reference
 
-coding-guardrails ships with 13 guardrail rules, each independently configurable.
+coding-guardrails ships with 15 guardrail rules, each independently configurable.
 
 ## Rule Behavior
 
@@ -257,3 +257,64 @@ submission/report tool after exploring only a small fraction of available tools.
 - Empty tool results
 - Whitespace-only results
 - Error messages (`Error:`, `Permission denied`, `No such file`)
+
+---
+
+## 13. Lint (`lint`)
+
+**What it does:** Runs the project linter on edited files (noticing offload).
+
+**Default:** Soft nudge (mode `nudge`); `block` holds the edit until clean.
+
+| Setting | Default | Description |
+|---|---|---|
+| `workspace` | `.` | Root for resolving relative paths ($CG_LINT_WORKSPACE) |
+| `mode` | `nudge` | `nudge` = advisory, `block` = hold until clean ($CG_LINT_MODE) |
+| `timeout` | `10.0` | Per-linter timeout in seconds |
+| `linters` | ruff/biome/gofmt | Per-extension linter specs (see config) |
+
+---
+
+## 14. Canary (`canary`)
+
+**What it does:** Plants a unique canary token in the system prompt and
+**hard-blocks** any tool call whose arguments contain it. The token has no
+legitimate use in a tool call — its presence means the model is being
+manipulated into exfiltrating or echoing its context (injection-driven
+exfiltration). Catches leaks regardless of payload shape: the leak itself is
+the signal, not the content.
+
+**Default:** Hard block. One token per proxy process.
+
+| Setting | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Plant canary + enforce |
+| `token` | generated | Fixed token override (default: `CG-CANARY-<16 hex>` per process) |
+
+---
+
+## 15. Input Scanning (`input_scanning`)
+
+**What it does:** Scans inbound **message content** (not tool calls) for
+prompt-injection signatures — the only rule that operates pre-generation.
+Covers indirect injection via tool results (instructions embedded in file
+contents, web pages, issue text) plus blatant direct injection in user
+messages. Heuristic regex signatures — no classifier model, no extra VRAM,
+sub-millisecond.
+
+**Default:** `mark` mode.
+
+| Mode | Behavior |
+|---|---|
+| `off` | Disabled |
+| `flag` | Log findings only; messages pass through unchanged |
+| `mark` | Log + insert a spotlighting `[GUARDRAIL WARNING]` system message after tainted tool results so the model treats them as data |
+
+User messages are never modified (the user is the principal) — flagged only.
+System messages are trusted (operator-authored) and skipped.
+
+**Detects:** instruction overrides ("ignore previous instructions"),
+jailbreak/persona swaps (DAN, developer mode), system-prompt disclosure
+requests, fake chat-template tags (`<|im_start|>`), exfiltration instructions
+("send the contents of ... to http..."), and imperative shapes in tool output
+("Before you continue, you must also ...").

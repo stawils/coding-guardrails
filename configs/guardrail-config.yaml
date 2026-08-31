@@ -28,6 +28,10 @@ path_safety:
 command_safety:
   enabled: true
   strength: hard  # hard = block, soft = nudge only
+  # Covers: destructive commands, git destructive ops, pipe-to-shell,
+  # encoded payloads (base64/hex/openssl decode-to-shell + blob decode-and-rescan),
+  # env-var injection (LD_PRELOAD, inline PATH=, BASH_ENV), and argument
+  # injection inside benign tools (ssh ;/&& chains, ProxyCommand, docker -e PATH=).
   blocked_commands:
     - "rm -rf /"
     - "rm -rf /*"
@@ -46,6 +50,22 @@ secrets:
   strength: hard  # hard = block, soft = mask and warn
   mask_value: "[REDACTED]"
   # Patterns: AWS keys, GitHub tokens, private keys, generic API keys
+
+# Canary token — context-exfiltration tripwire. A unique token is planted in
+# the system prompt; any tool call that echoes it (command, URL, file write)
+# is blocked. Catches injection-driven exfiltration regardless of payload shape.
+canary:
+  enabled: true
+  # token: CG-CANARY-XXXX  # optional fixed token (default: generated per process)
+
+# Input scanning — prompt-injection signatures in inbound message content.
+# mode: off   = disabled
+#        flag  = log findings only
+#        mark  = insert spotlighting warning after tainted tool results (default)
+# User messages are never modified (the user is the principal) — flagged only.
+input_scanning:
+  enabled: true
+  mode: mark
 
 prerequisites:
   enabled: true

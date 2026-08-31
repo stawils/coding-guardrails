@@ -182,6 +182,58 @@ async def caption_images_in_messages(
     return out
 
 
+# ── Role normalization (system/developer to the front) ─────────────────────
+# The Qwen3.5/3.8 jinja chat template requires the first message to be a
+# system/developer message; llama-server's --jinja parser generation hard-fails
+# with "System message must be at the beginning" if a `developer`-role message
+# appears later in the stream. OpenAI clients legitimately emit developer
+# messages mid-conversation (repo context, runtime instructions). Hoisting all
+# system/developer messages to the front preserves semantics and satisfies the
+# template. Verified trigger matrix 2026-08-31 via direct backend probes.
+_CONVERGENCE_NUDGE = (
+    "You have been working through several tool calls. If the task is complete "
+    "and the deliverable file is written and verified, STOP calling tools and "
+    "produce your final summary/report now. Only continue if real work remains."
+)
+
+_CONVERGENCE_NUDGE_FIRM = (
+    "You have completed many tool calls. If you have not written the deliverable "
+    "file yet, write it NOW in one tool call, then STOP and emit your final "
+    "summary/report. Do not launch into more analysis or re-verification."
+)
+
+
+def _convergence_nudge_openai(openai_messages: list[dict[str, Any]], after: int, firm_after: int = 12) -> str | None:
+    """Return a convergence reminder when the conversation already contains many
+    assistant tool-call turns. Targets the 'keeps going' terminal-discipline
+    failure (model re-verifies instead of finalizing). Soft (conditional) up to
+    ``firm_after`` tool-call turns; imperative beyond it. ``after <= 0`` disables."""
+    if after <= 0:
+        return None
+    tool_calls = sum(
+        1
+        for m in openai_messages
+        if m.get("role") == "assistant" and m.get("tool_calls")
+    )
+    if tool_calls >= firm_after:
+        return _CONVERGENCE_NUDGE_FIRM
+    if tool_calls >= after:
+        return _CONVERGENCE_NUDGE
+    return None
+
+
+def _normalize_message_roles(openai_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Move all system/developer messages to the front, preserving relative order."""
+    if not openai_messages:
+        return openai_messages
+    sys_msgs = [m for m in openai_messages if m.get("role") in ("system", "developer")]
+    if not sys_msgs:
+        return openai_messages
+    rest = [m for m in openai_messages if m.get("role") not in ("system", "developer")]
+    normalized = sys_msgs + rest
+    return normalized if normalized != openai_messages else openai_messages
+
+
 def _extract_tool_specs(request_tools: list[dict[str, Any]] | None) -> list[ToolSpec]:
     """Extract ToolSpec objects from OpenAI tools array."""
     if not request_tools:
@@ -275,6 +327,7 @@ async def handle_chat_completions(
     rescue_enabled: bool = True,
     auto_no_thinking: bool = True,
     vision_captioning: bool = True,
+    convergence_nudge_after: int = 8,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Handle /v1/chat/completions with Forge Layer 1 + our Layer 2.
 
@@ -287,6 +340,11 @@ async def handle_chat_completions(
     is_stream = body.get("stream", False)
     model_name = body.get("model", "coding-guardrails")
     sampling = _extract_sampling(body)
+
+    # Role normalization first: hoist system/developer to the front so the
+    # jinja template's "system message at the beginning" guard never fires
+    # (llama-server --jinja parser generation 400s on mid-stream developer).
+    openai_messages = _normalize_message_roles(openai_messages)
 
     # Vision captioning: replace image_url blocks with captions before any
     # processing (Forge's converter would otherwise drop the images entirely).
@@ -330,6 +388,18 @@ async def handle_chat_completions(
             cleaned.append(m)
         openai_messages = cleaned
 
+    # Input scanning — detect prompt-injection signatures in message content
+    # (indirect injection via tool results is the dangerous class). Mark mode
+    # inserts a spotlighting warning after tainted tool output so the model
+    # treats it as data; user messages are flagged (logged) only.
+    if guardrails.input_scanning:
+        scan = guardrails.input_scanning.scan_messages(openai_messages)
+        if scan.has_findings:
+            logger.warning(
+                "INPUT SCAN: %d injection signature(s) detected", len(scan.findings),
+            )
+        openai_messages = scan.messages
+
     # Inject tool-call enforcement. Two regimes:
     #   - Request declared a respond-style terminal tool → finish with respond().
     #   - Real coding agent (bash/read/edit/write, no respond tool) → finish with
@@ -361,6 +431,13 @@ async def handle_chat_completions(
     else:
         enforcement = None
 
+    # Convergence nudge: if the conversation is already deep into a tool loop,
+    # append a conditional reminder so the model finalizes instead of continuing
+    # to re-verify (terminal-discipline failure mode).
+    nudge = _convergence_nudge_openai(openai_messages, convergence_nudge_after)
+    if nudge and enforcement:
+        enforcement = enforcement + "\n\n" + nudge
+
     if enforcement and openai_messages:
         first = openai_messages[0]
         if first.get("role") == "system":
@@ -369,6 +446,19 @@ async def handle_chat_completions(
                 openai_messages[0] = {**first, "content": content + "\n\n" + enforcement}
         else:
             openai_messages.insert(0, {"role": "system", "content": enforcement})
+
+    # Canary token — plant the tripwire in the system prompt. Injected every
+    # request when absent (idempotent); the canary rule (Layer 2) blocks any
+    # tool call that echoes it back.
+    if guardrails.canary and request_tools and openai_messages:
+        canary_text = guardrails.canary.injection_text
+        first = openai_messages[0]
+        if first.get("role") == "system":
+            content = first.get("content", "")
+            if guardrails.canary.token not in content:
+                openai_messages[0] = {**first, "content": content + "\n\n" + canary_text}
+        else:
+            openai_messages.insert(0, {"role": "system", "content": canary_text})
 
     # Convert inbound
     messages = openai_to_messages(openai_messages)

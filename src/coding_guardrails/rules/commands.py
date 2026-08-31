@@ -90,6 +90,27 @@ class CommandSafetyRule:
         r"rm\s*\\\s*-rf",          # backslash-escaped rm
         r"bash\s+-c\s+.*\$\(",    # command substitution in bash -c
         r"\x60[^%].*\x60",         # backtick execution
+        # Encoded payload execution — decode then pipe to a shell
+        r"base64\s+(?:-d|--decode)[^|]*\|\s*(?:ba)?sh",
+        r"\bxxd\s+-r[^|]*\|\s*(?:ba)?sh",
+        r"openssl\s+(?:enc|aes|des)[^|]*\s-d[^|]*\|\s*(?:ba)?sh",
+        r"\$\(\s*echo\s+[A-Za-z0-9+/=]{16,}\s*\|\s*base64",
+        r"(?:exec|eval)\s*\(\s*(?:base64\.b64decode|b64decode)",
+        # Remote content into execution context
+        r"[A-Za-z_]\w*=\$\(\s*(?:curl|wget)\b",          # fetch-into-var then exec (WS gateway hijack shape)
+        r"\b(?:node|deno|python3?|perl|ruby|php)\s+(?:-e|-c)\s+['\"]?\$\(",  # interp eval of command substitution
+        # Environment-variable injection — env overrides preceding a command
+        r"\bLD_PRELOAD\s*=",
+        r"\bLD_AUDIT\s*=",
+        r"\bLD_LIBRARY_PATH\s*=\S*\.so",
+        r"\bBASH_ENV\s*=\S",
+        r"(?:^|&&|\|\||;|\||\s)\s*PATH=[^\s$\"']\S*\s+\S",   # inline PATH= override before cmd
+        # Argument injection inside benign tools
+        r"ssh\s+[^|]*?;\s*(?:curl|wget|bash|sh|nc|ncat|python|chmod|rm)\b",
+        r"ssh\s+[^|]*?&&\s*(?:curl|wget|bash|sh|nc|ncat|python)\b",
+        r"\bProxyCommand\s*[= ]",
+        r"ssh\s+[^|]*\$\(",   # local command substitution on ssh line
+        r"docker\s+(?:run|exec)[^|]*\s(?:-e|--env)[=\s]\s*(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|BASH_ENV)\s*=",
     ])
 
     require_confirmation: list[str] = field(default_factory=lambda: [
@@ -126,6 +147,43 @@ class CommandSafetyRule:
         # Strip backslash escapes between chars (r\m → rm, su\do → sudo)
         cleaned = re.sub(r"\\(?=[a-zA-Z])", "", command)
 
+        result = self._match_patterns(command, cleaned, tool)
+        if result is not None:
+            return result
+
+        # Encoded-payload defense: find base64-looking blobs, decode them,
+        # and re-check the decoded text. Catches `echo cm0gLXJmIC8= ... `
+        # even when the execution pipe is constructed to dodge the
+        # decode-to-shell patterns above. One level deep — no recursion into
+        # re-encoded blobs (diminishing returns, fp risk).
+        for source in (command, cleaned):
+            for blob in re.findall(r"[A-Za-z0-9+/]{16,}={0,2}", source):
+                try:
+                    import base64 as _b64
+                    decoded = _b64.b64decode(blob, validate=True).decode("utf-8", errors="ignore")
+                except Exception:  # noqa: BLE001 — not valid base64, skip
+                    continue
+                if decoded != blob and len(decoded) >= 4:
+                    result = self._match_patterns(decoded, decoded, tool, decoded=True)
+                    if result is not None:
+                        return result
+
+        # Confirmation nudges
+        for confirm_cmd in (self.require_confirmation or []):
+            if confirm_cmd.lower() in command.lower():
+                return RuleResult.nudge(
+                    tool,
+                    message=f"Advisory: Consider using caution with '{confirm_cmd}'. "
+                    "This command may cause data loss. Add a confirmation step before executing.",
+                )
+
+        return None
+
+    def _match_patterns(
+        self, command: str, cleaned: str, tool: str, *, decoded: bool = False,
+    ) -> RuleResult | None:
+        """Check hard blocks against original + cleaned forms. None if safe."""
+
         # Hard blocks — exact matches (prefix-based) - check both original and cleaned
         for blocked in (self.blocked or []):
             if command.strip().startswith(blocked) or cleaned.strip().startswith(blocked):
@@ -138,19 +196,11 @@ class CommandSafetyRule:
         # Hard blocks — pattern matches - check both original and cleaned
         for pattern in (self.blocked_patterns or []):
             if re.search(pattern, command, re.IGNORECASE) or re.search(pattern, cleaned, re.IGNORECASE):
+                tag = " (base64-decoded payload)" if decoded else ""
                 return RuleResult.block(
                     tool,
-                    nudge="Command blocked: contains a dangerous pattern.",
-                    reason=f"blocked pattern: {command[:100]}",
-                )
-
-        # Confirmation nudges
-        for confirm_cmd in (self.require_confirmation or []):
-            if confirm_cmd.lower() in command.lower():
-                return RuleResult.nudge(
-                    tool,
-                    message=f"Advisory: Consider using caution with '{confirm_cmd}'. "
-                    "This command may cause data loss. Add a confirmation step before executing.",
+                    nudge=f"Command blocked: contains a dangerous pattern{tag}.",
+                    reason=f"blocked pattern{tag}: {command[:100]}",
                 )
 
         return None

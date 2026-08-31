@@ -47,6 +47,8 @@ def main() -> None:
               help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. Tool requests keep thinking on. Default on.")
 @click.option("--vision-captioning/--no-vision-captioning", default=True,
               help="Caption inbound images via the (multimodal) backend and substitute text blocks — the guardrails pipeline is text-only. Requires the backend to run with an mmproj. Default on.")
+@click.option("--convergence-nudge-after", default=8, type=int,
+              help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables. Targets the keeps-going terminal-discipline failure. Default 8.")
 def serve(
     backend_url: str,
     model: str,
@@ -66,6 +68,7 @@ def serve(
     vram_margin: float,
     auto_no_thinking: bool,
     vision_captioning: bool,
+    convergence_nudge_after: int,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -108,6 +111,7 @@ def serve(
             vram_margin=vram_margin,
             auto_no_thinking=auto_no_thinking,
             vision_captioning=vision_captioning,
+            convergence_nudge_after=convergence_nudge_after,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -130,6 +134,7 @@ async def _run_proxy(
     vram_margin: float = 2.0,
     auto_no_thinking: bool = True,
     vision_captioning: bool = True,
+    convergence_nudge_after: int = 8,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -209,6 +214,7 @@ async def _run_proxy(
         backend_manager=backend_manager,
         auto_no_thinking=auto_no_thinking,
         vision_captioning=vision_captioning,
+        convergence_nudge_after=convergence_nudge_after,
     )
     await server.start()
     click.echo(f"\n  Proxy ready at http://{host}:{port}")

@@ -16,6 +16,8 @@ from coding_guardrails.rules.base import RuleResult, ToolCall
 _BUILTIN_PATTERNS: list[tuple[str, str, int]] = [
     # OpenAI API keys
     (r"sk-[a-zA-Z0-9]{20,}", "OpenAI API key", 0),
+    # Anthropic API keys
+    (r"sk-ant-[a-zA-Z0-9-]{20,}", "Anthropic API key", 0),
     # GitHub personal access tokens
     (r"ghp_[a-zA-Z0-9]{36}", "GitHub PAT", 0),
     # GitHub OAuth tokens

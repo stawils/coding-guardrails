@@ -25,7 +25,7 @@ coding-guardrails proxy (:8081)
   │   ├── Normalize max_completion_tokens → max_tokens
   │   └── Default 8192 token cap if none specified
   │
-  ├── Layer 2: Coding Guardrails (13 rules)
+  ├── Layer 2: Coding Guardrails (15 rules)
   │   ├── path_safety      — block /etc/, /proc/, path traversal
   │   ├── command_safety   — block sudo, eval/curl, git destructive ops
   │   ├── network          — block file uploads, SSRF, metadata endpoints

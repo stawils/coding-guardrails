@@ -13,6 +13,8 @@ def test_defaults_all_rules_active():
     assert gw.secrets is not None
     assert gw.sequencing is not None
     assert gw.tool_resolution is not None
+    assert gw.canary is not None
+    assert gw.input_scanning is not None
 
 
 class TestCrossRuleInteractions:

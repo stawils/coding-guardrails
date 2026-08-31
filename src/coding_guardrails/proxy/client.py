@@ -29,6 +29,8 @@ from forge.clients.llamafile import (
 from forge.core.workflow import LLMResponse, TextResponse, ToolCall, ToolSpec
 from forge.errors import BackendError
 
+from coding_guardrails.proxy.handler import _normalize_message_roles
+
 
 class SafeLlamafileClient(LlamafileClient):
     """LlamafileClient that forwards max_tokens and preserves thinking."""
@@ -177,6 +179,12 @@ class SafeLlamafileClient(LlamafileClient):
         """Native FC send that preserves reasoning in empty-text responses."""
         merged = _merge_consecutive(messages)
         merged = self._inject_acceptance_prefill(merged)
+        # Outbound role guard: forge/context machinery may append a trailing
+        # system/developer message after history (pi project-instructions). The
+        # qwen3_5 jinja template 400s ("System message must be at the beginning")
+        # if any system message appears after non-system content. Normalize the
+        # final wire list here — the invariant must hold at the backend boundary.
+        merged = _normalize_message_roles(merged)
         body: dict[str, Any] = {
             "model": self.model,
             "messages": merged,
@@ -193,6 +201,13 @@ class SafeLlamafileClient(LlamafileClient):
         if resp.status_code == 500:
             return TextResponse(content=resp.text)
         if resp.status_code != 200:
+            logging.getLogger("coding_guardrails.client").warning(
+                "outbound roles=%s msgs=%d first=%r (resp %d)",
+                [m.get("role") for m in body.get("messages", [])],
+                len(body.get("messages", [])),
+                body.get("messages", [{}])[0],
+                resp.status_code,
+            )
             raise BackendError(resp.status_code, resp.text)
         data = resp.json()
         self._record_usage(data)
@@ -242,6 +257,9 @@ class SafeLlamafileClient(LlamafileClient):
         """Prompt-injected send that preserves reasoning in empty-text responses."""
         prepared = _merge_consecutive(_downgrade_messages(messages))
         prepared = self._inject_acceptance_prefill(prepared)
+        # Outbound role guard (see _send_native): keep the wire list valid for
+        # the qwen3_5 jinja template — system/developer at the front.
+        prepared = _normalize_message_roles(prepared)
         if tools:
             tool_prompt = build_tool_prompt(tools)
             prepared[0] = {

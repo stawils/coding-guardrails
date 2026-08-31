@@ -32,6 +32,8 @@ from coding_guardrails.rules.sequencing import SequenceRule
 from coding_guardrails.rules.session_budget import SessionBudgetRule
 from coding_guardrails.rules.thoroughness import ThoroughnessRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
+from coding_guardrails.rules.canary import CanaryRule, _new_canary
+from coding_guardrails.rules.injection import InputScanRule
 
 logger = logging.getLogger("coding_guardrails.layer2")
 
@@ -83,6 +85,8 @@ class CodingGuardrails:
     tool_resolution: ToolResolutionRule | None = None
     dup_write: DuplicateWriteRule | None = None
     lint: LintRule | None = None
+    canary: CanaryRule | None = None
+    input_scanning: InputScanRule | None = None
 
     @classmethod
     def from_config(cls, config: dict) -> CodingGuardrails:
@@ -253,6 +257,21 @@ class CodingGuardrails:
                 linters=linters,
             )
 
+        # Canary token — context-exfiltration tripwire. Token is generated
+        # per proxy process (one instance per from_config/defaults call).
+        canary_cfg = config.get("canary", {})
+        if canary_cfg.get("enabled", True):
+            rules["canary"] = CanaryRule(
+                token=canary_cfg.get("token") or _new_canary(),
+            )
+
+        # Input scanning — prompt-injection signatures in message content
+        inj_cfg = config.get("input_scanning", {})
+        if inj_cfg.get("enabled", True):
+            rules["input_scanning"] = InputScanRule(
+                mode=inj_cfg.get("mode", "mark"),
+            )
+
         return cls(**rules)
 
     @classmethod
@@ -272,6 +291,8 @@ class CodingGuardrails:
             tool_resolution=ToolResolutionRule(),
             dup_write=DuplicateWriteRule(),
             lint=LintRule(),
+            canary=CanaryRule(),
+            input_scanning=InputScanRule(),
         )
 
     def _active_rules(self) -> list[Rule]:
@@ -290,6 +311,7 @@ class CodingGuardrails:
             self.tool_resolution,
             self.dup_write,
             self.lint,
+            self.canary,
         ] if r is not None]
 
     def check(self, calls: list[ToolCall]) -> CheckResult:

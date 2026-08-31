@@ -35,6 +35,8 @@ _UPLOAD_PATTERNS: list[tuple[str, str]] = [
     (r"\bncat\b\s+.*\d+", "netcat variant (ncat) to remote"),
     (r"\bsocat\b\s+", "socat network tool"),
     (r"\b(?:dig|nslookup|host)\b.*\$", "DNS tool with subshell"),
+    (r"\bbase64\b[^|]*\|\s*(?:curl|wget|nc\b|ncat|socat)\b", "encode-then-send exfil (base64 pipe to network tool)"),
+    (r"\bxxd\s+-r[^|]*\|\s*(?:curl|wget|nc\b|ncat|socat)\b", "encode-then-send exfil (hex decode to network tool)"),
 ]
 
 # Cloud metadata / internal endpoints.

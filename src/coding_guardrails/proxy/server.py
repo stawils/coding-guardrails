@@ -55,6 +55,7 @@ class GuardrailProxyServer:
         backend_manager=None,  # optional coding_guardrails.server.manager.BackendManager
         auto_no_thinking: bool = True,
         vision_captioning: bool = True,
+        convergence_nudge_after: int = 8,
     ) -> None:
         self._client = client
         self._context_manager = context_manager
@@ -68,6 +69,7 @@ class GuardrailProxyServer:
         self._backend_manager = backend_manager
         self._auto_no_thinking = auto_no_thinking
         self._vision_captioning = vision_captioning
+        self._convergence_nudge_after = convergence_nudge_after
         self._server: asyncio.Server | None = None
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
@@ -296,6 +298,7 @@ class GuardrailProxyServer:
                 rescue_enabled=self._rescue_enabled,
                 auto_no_thinking=self._auto_no_thinking,
                 vision_captioning=self._vision_captioning,
+                convergence_nudge_after=self._convergence_nudge_after,
             )
         except Exception as exc:
             logger.exception("Handler error")

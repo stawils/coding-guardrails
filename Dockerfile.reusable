@@ -1,0 +1,42 @@
+# Reusable build for coding-guardrails — bundles the WORKING host setup
+# (the compiled llama-server binary + shared libs + CG proxy wheel) so the
+# container runs exactly like the host CG (proxy --manage-backend spawns
+# llama-server in-container, lazy-load + VRAM-gate).
+#
+# Why: the upstream ghcr.io/ggerganov/llama.cpp:server image does NOT exist at
+# that tag (manifest unknown). Bundling the host-compiled binary is the proven
+# path (same pinned llama.cpp commit, CUDA-enabled).
+#
+# Build context = /tmp/cg_build (stages llama-server + libs under build/bin/,
+# a wheel, and guardrail-config.yaml).
+FROM python:3.12-slim
+
+WORKDIR /opt/cg
+
+# unified runtime libs llama-server needs at runtime
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+      libcurl4 libgomp1 file curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 1. the compiled llama-server binary + its shared libs, at the XDG data dir
+#    paths.py expects: <data>/llama.cpp/build/bin/{llama-server,*.so}
+COPY llama.cpp/build/bin/ /opt/cg/llama.cpp/build/bin/
+RUN chmod -R +x /opt/cg/llama.cpp/build/bin/
+
+# 2. the CG proxy wheel
+COPY dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/coding_guardrails-*.whl && rm -f /tmp/coding_guardrails-*.whl
+
+# 3. guardrails config
+COPY guardrail-config.yaml /etc/coding-guardrails/config.yaml
+
+ENV CODING_GUARDRAILS_CONFIG=/etc/coding-guardrails/config.yaml \
+    XDG_DATA_HOME=/opt/cg
+
+# Models are mounted as a volume into /opt/cg/models (14G GGUF stays on disk,
+# not baked). llama-server finds them at models_dir()/Qwen3.8-27B-UD-Q3_K_XL.gguf
+
+EXPOSE 8080 8081
+ENTRYPOINT ["coding-guardrails"]
+CMD ["serve", "--manage-backend", "--model", "Qwen3.8-27B-UD-Q3_K_XL", \
+     "--port", "8081", "--host", "0.0.0.0", "--backend-url", "http://127.0.0.1:8080"]
