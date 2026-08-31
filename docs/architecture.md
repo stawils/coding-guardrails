@@ -50,6 +50,14 @@ Response flows back through both layers to agent
 
 Forge handles the "make it actually work" layer:
 
+- **Context budget (measured cliff):** the serving `ContextManager` budgets
+  `min(profile_ctx, profile.context_budget or --context-budget)` — default
+  12000 tokens (Qwen3.8-27B measured 2026-08-31: tool-calling collapses to
+  prose at ~20-27K prompt tokens; solid below ~11K; flaky 13-19K regardless
+  of temperature). TieredCompact fires at ~75%, keeping worker sessions under
+  the cliff. `--reasoning-replay keep-last` (default) delivers thinking to the
+  agent in `reasoning_content` — forge >=0.7.5's converter default `none`
+  would silently drop it from the wire.
 - **Rescue parsing** — When the model outputs tool calls as text (not JSON),
   Forge parses them out and converts to proper tool call format
 - **Validation** — Ensures tool call arguments are valid JSON and match

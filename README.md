@@ -188,7 +188,7 @@ defaults, boot flags, VRAM requirements, and context limits per GGUF.
 
 | Model | Size | VRAM | Context | Speed | Eval | When to use |
 |---|---|---|---|---|---|---|
-| **Qwen3.8-27B** ⭐ | 13.44 GB | 19 GB | **128K** | ~68 tok/s (MTP) | **100% / 99% acc** | **Default.** Best measured agent on the harness; vision-capable |
+| **Qwen3.8-27B** ⭐ | 13.44 GB | 18.2 GB | **128K** | ~68 tok/s (MTP) | **100% / 99% acc** | **Default.** Best measured agent on the harness; vision-capable |
 | **Qwen3.5-9B** | 5.7 GB | 18 GB | 200K | ~53 tok/s (MTP) | 100% / 92% acc | Fast fallback; longest context (200K) |
 | **Ornith-1.0-9B** | 9.5 GB | 18 GB | 200K | ~50 tok/s | 100% / **95% acc** | Best 9B accuracy; reasoning model |
 | **Qwen3.6-27B** | 17.9 GB | 19.5 GB | **48K** | ~20-30 tok/s | 99.3% / 94% acc | Highest capability when 48K suffices |
@@ -255,7 +255,7 @@ limits; workspace root for path safety; secret patterns. Full reference in
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 564 tests, ~25s
+pytest tests/unit/ -q          # 687 tests (~27s)
 python eval/scripts/run_forge_eval.py --mode proxy --runs 5   # the eval behind the tables above
 ```
 
