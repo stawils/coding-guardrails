@@ -51,6 +51,8 @@ def main() -> None:
               help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables (default). Experimental — measured NOT to fix open-ended task drift (2026-08-31); bounded task templates do. Default 0.")
 @click.option("--reasoning-replay", default="keep-last", type=click.Choice(["full", "keep-last", "none"]),
               help="How much captured model thinking to deliver to the agent in responses: 'full' (thinking as message content), 'keep-last' (thinking in the reasoning_content field, forge's recommended channel), or 'none' (drop — observability only). Default keep-last.")
+@click.option("--context-budget", default=20000, type=int,
+              help="Layer-1 compaction budget in tokens (TieredCompact fires at ~75% of it). Measured 2026-08-31: Qwen3.8-27B tool-calling is 100%% reliable at <=~19K real tokens through the proxy and collapses to prose at ~20-27K — the 128K profile budget never compacted before the cliff. Default 20000 keeps sessions under the measured safe zone; raise only for text-heavy single-shot work.")
 def serve(
     backend_url: str,
     model: str,
@@ -72,6 +74,7 @@ def serve(
     vision_captioning: bool,
     convergence_nudge_after: int,
     reasoning_replay: str,
+    context_budget: int,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -116,6 +119,7 @@ def serve(
             vision_captioning=vision_captioning,
             convergence_nudge_after=convergence_nudge_after,
             reasoning_replay=reasoning_replay,
+            context_budget=context_budget,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -140,6 +144,7 @@ async def _run_proxy(
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",
+    context_budget: int = 20000,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -170,16 +175,24 @@ async def _run_proxy(
     )
 
     # Context budget: in managed mode the backend isn't up yet (lazy), so use the
-    # model profile's context_tokens; otherwise auto-detect from the backend.
+    # model profile's context_tokens (capped by --context-budget); otherwise
+    # auto-detect from the backend, then cap the same way. The cap keeps tool
+    # sessions under the measured tool-call cliff (~20-27K real tokens on
+    # Qwen3.8-27B through the proxy, 2026-08-31 — compaction at 75% of this
+    # budget fires well before it).
     if manage_backend:
         from coding_guardrails.models.profiles import get_profile
         prof = get_profile(model)
         budget = prof.context_tokens if prof else 8192
-        logging.info("Context budget: %d tokens (from profile; backend lazy)", budget)
+        budget = min(budget, context_budget)
+        logging.info("Context budget: %d tokens (profile %d capped by --context-budget %d; backend lazy)",
+                     budget, prof.context_tokens if prof else 8192, context_budget)
     else:
         ctx_len = await client.get_context_length()
         budget = ctx_len if ctx_len is not None else 8192
-        logging.info("Context budget: %d tokens", budget)
+        budget = min(budget, context_budget)
+        logging.info("Context budget: %d tokens (detected %d capped by --context-budget %d)",
+                     budget, ctx_len if ctx_len is not None else 8192, context_budget)
 
     context_manager = ContextManager(
         strategy=TieredCompact(),
