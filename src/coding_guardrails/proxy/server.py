@@ -157,7 +157,7 @@ class GuardrailProxyServer:
                 if self._backend_manager is not None:
                     try:
                         payload["backend"] = {
-                            "loaded": bool(self._backend_manager.is_loaded()),
+                            "loaded": bool(self._backend_manager.is_loaded),
                             "model": getattr(getattr(self._backend_manager, "cfg", None), "profile", None),
                         }
                     except Exception:  # noqa: BLE001 — health must never 500

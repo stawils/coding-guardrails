@@ -253,9 +253,10 @@ coding-guardrails serve \
 - **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
 - **Tool-call cliff (measured 2026-08-31):** Qwen3.8-27B stops tool-calling at ~20-27K
-  prompt tokens through the proxy (prose fallback, no reasoning). The serving
-  ContextManager budgets min(profile_ctx, `--context-budget`), default 20000 —
-  TieredCompact fires at ~75% (~15K) so worker sessions stay under the cliff. Raise
+  prompt tokens through the proxy (prose fallback, no reasoning); solid below ~11K and
+  flaky at 13-19K regardless of temperature. The serving ContextManager budgets
+  min(profile_ctx, profile.context_budget or `--context-budget`), default 12000 —
+  TieredCompact fires at ~75% (~9K) so worker sessions stay under the cliff. Raise
   `--context-budget` only for text-heavy single-shot reads. Probe: eval/scripts/probe_longctx.py.
 - `recommended_sampling=False` — model not in Forge's registry
 - any md file writing should be in gitignored plans/ folder.
