@@ -68,6 +68,14 @@ llama-server? Skip `server build/start` and point `--backend-url` at it.
 in the right sampling and boot flags (KV cache quantization, speculative
 decoding, context size) per model — no flag archaeology.
 
+### Key proxy flags
+
+| Flag | Default | What it does |
+|------|---------|--------------|
+| `--reasoning-replay` | `keep-last` | How much model thinking reaches the agent: `keep-last` (thinking in the `reasoning_content` field), `full` (thinking as message content), `none` (observability only). forge ≥0.7.5 defaults to `none` — set this or thinking silently vanishes from responses. |
+| `--context-budget` | 12000 | Layer-1 compaction budget (tokens). Measured 2026-08-31: tool-calling collapses to prose at ~20–27K prompt tokens (Qwen3.8-27B through the proxy); `TieredCompact` fires at ~75% so sessions stay under the cliff. Raise only for text-heavy single-shot reads. Per-model override: `ModelProfile.context_budget` (Qwen3.8 measured → 12000). |
+| `--convergence-nudge-after` | 0 (off) | Experimental finalize-now reminder after N tool-call turns. Measured NOT to fix open-ended task drift — bounded task templates do. |
+
 ## The 15 guardrail rules
 
 Every rule is independently configurable (disable, change severity, tune

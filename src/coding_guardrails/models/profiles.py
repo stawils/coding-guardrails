@@ -23,6 +23,10 @@ class ModelProfile:
     swe_bench_verified: float | None  # SWE-bench Verified score (0-100)
     sampling: dict  # default sampling parameters
     boot_flags: list[str]  # extra llama-server flags
+    context_budget: int | None = None  # Layer-1 compaction budget (tokens);
+    # None = use the --context-budget global default. Measured 2026-08-31:
+    # tool-calling through the proxy is solid below ~11K prompts, flaky at
+    # 13-19K regardless of temperature — cap well under the cliff.
 
 
 # fmt: off
@@ -89,6 +93,7 @@ PROFILES: dict[str, ModelProfile] = {
         file_size_gb=13.44,
         vram_required_gb=18.2,  # gate floor: incremental footprint ≈ 18.1 GB measured 2026-08-31 (18,897 MiB free → 796 MiB free on load @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. 18.2 = footprint + 0.1, below the ~18.4 desktop worst-case baseline (rustdesk+venv), above the OOM floor. Failure mode below it is a clean 503 → fleet L2 fallback (queue-timeout), not a crash.
         context_tokens=131072,
+        context_budget=12000,  # tool-call cliff ~20-27K (prose fallback); solid <~11K, flaky 13-19K (measured 2026-08-31). TieredCompact at 75% -> ~9-11K prompts.
         architecture="dense",
         active_params_b=27.0,
         swe_bench_verified=61.7,

@@ -153,7 +153,16 @@ class GuardrailProxyServer:
                 )
 
             if method == "GET" and path == "/health":
-                await self._send_json(writer, 200, json.dumps({"status": "ok"}))
+                payload = {"status": "ok"}
+                if self._backend_manager is not None:
+                    try:
+                        payload["backend"] = {
+                            "loaded": bool(self._backend_manager.is_loaded()),
+                            "model": getattr(getattr(self._backend_manager, "cfg", None), "profile", None),
+                        }
+                    except Exception:  # noqa: BLE001 — health must never 500
+                        payload["backend"] = {"loaded": False, "model": None}
+                await self._send_json(writer, 200, json.dumps(payload))
             elif method == "GET" and path == "/v1/models":
                 await self._handle_models(writer)
             elif method == "POST" and path == "/v1/chat/completions":

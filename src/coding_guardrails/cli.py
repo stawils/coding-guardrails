@@ -51,8 +51,8 @@ def main() -> None:
               help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables (default). Experimental — measured NOT to fix open-ended task drift (2026-08-31); bounded task templates do. Default 0.")
 @click.option("--reasoning-replay", default="keep-last", type=click.Choice(["full", "keep-last", "none"]),
               help="How much captured model thinking to deliver to the agent in responses: 'full' (thinking as message content), 'keep-last' (thinking in the reasoning_content field, forge's recommended channel), or 'none' (drop — observability only). Default keep-last.")
-@click.option("--context-budget", default=20000, type=int,
-              help="Layer-1 compaction budget in tokens (TieredCompact fires at ~75% of it). Measured 2026-08-31: Qwen3.8-27B tool-calling is 100%% reliable at <=~19K real tokens through the proxy and collapses to prose at ~20-27K — the 128K profile budget never compacted before the cliff. Default 20000 keeps sessions under the measured safe zone; raise only for text-heavy single-shot work.")
+@click.option("--context-budget", default=12000, type=int,
+              help="Layer-1 compaction budget in tokens (TieredCompact fires at ~75% of it). Measured 2026-08-31: Qwen3.8-27B tool-calling is 100%% reliable at <=~19K real tokens through the proxy and collapses to prose at ~20-27K — the 128K profile budget never compacted before the cliff. Default 12000 (TieredCompact -> ~11K prompts, the measured solid zone; 13-19K compacted prompts ran ~2/3 flaky regardless of temperature, 2026-08-31). Raise only for text-heavy single-shot work.")
 def serve(
     backend_url: str,
     model: str,
@@ -144,7 +144,7 @@ async def _run_proxy(
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",
-    context_budget: int = 20000,
+    context_budget: int = 12000,
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -183,16 +183,19 @@ async def _run_proxy(
     if manage_backend:
         from coding_guardrails.models.profiles import get_profile
         prof = get_profile(model)
-        budget = prof.context_tokens if prof else 8192
-        budget = min(budget, context_budget)
-        logging.info("Context budget: %d tokens (profile %d capped by --context-budget %d; backend lazy)",
-                     budget, prof.context_tokens if prof else 8192, context_budget)
+        raw_budget = prof.context_tokens if prof else 8192
+        profile_cap = prof.context_budget if prof else None
+        budget = min(raw_budget, profile_cap or context_budget)
+        logging.info(
+            "Context budget: %d tokens (profile %d, profile-capped %d, flag %d; backend lazy)",
+            budget, raw_budget, profile_cap or context_budget, context_budget,
+        )
     else:
         ctx_len = await client.get_context_length()
-        budget = ctx_len if ctx_len is not None else 8192
-        budget = min(budget, context_budget)
+        raw_budget = ctx_len if ctx_len is not None else 8192
+        budget = min(raw_budget, context_budget)
         logging.info("Context budget: %d tokens (detected %d capped by --context-budget %d)",
-                     budget, ctx_len if ctx_len is not None else 8192, context_budget)
+                     budget, raw_budget, context_budget)
 
     context_manager = ContextManager(
         strategy=TieredCompact(),

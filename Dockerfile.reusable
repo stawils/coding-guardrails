@@ -3,6 +3,15 @@
 # container runs exactly like the host CG (proxy --manage-backend spawns
 # llama-server in-container, lazy-load + VRAM-gate).
 #
+# ⚠️ WIP: bootstraps the HOST build tree — the build context must stage
+# llama-server + libs under build/bin/, a CG wheel, and the config under
+# /tmp/cg_build (see AGENTS/plan notes). Not generalized yet; use for the
+# fleet worker image only.
+#
+# Build args (overridable):
+#   CG_MODEL            default Qwen3.8-27B-UD-Q3_K_XL
+#   CG_CONTEXT_BUDGET   default 12000 (measured tool-call cliff cap, 2026-08-31)
+#
 # Why: the upstream ghcr.io/ggerganov/llama.cpp:server image does NOT exist at
 # that tag (manifest unknown). Bundling the host-compiled binary is the proven
 # path (same pinned llama.cpp commit, CUDA-enabled).
@@ -10,6 +19,9 @@
 # Build context = /tmp/cg_build (stages llama-server + libs under build/bin/,
 # a wheel, and guardrail-config.yaml).
 FROM python:3.12-slim
+
+ARG CG_MODEL=Qwen3.8-27B-UD-Q3_K_XL
+ARG CG_CONTEXT_BUDGET=12000
 
 WORKDIR /opt/cg
 
@@ -38,5 +50,6 @@ ENV CODING_GUARDRAILS_CONFIG=/etc/coding-guardrails/config.yaml \
 
 EXPOSE 8080 8081
 ENTRYPOINT ["coding-guardrails"]
-CMD ["serve", "--manage-backend", "--model", "Qwen3.8-27B-UD-Q3_K_XL", \
+CMD ["serve", "--manage-backend", "--model", "${CG_MODEL}", \
+     "--context-budget", "${CG_CONTEXT_BUDGET}", \
      "--port", "8081", "--host", "0.0.0.0", "--backend-url", "http://127.0.0.1:8080"]

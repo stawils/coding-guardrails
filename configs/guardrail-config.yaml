@@ -1,6 +1,18 @@
 # Default guardrail configuration
 # All rules enabled with sensible defaults.
 
+# ── Proxy serve flags (set on the CLI, not in this file) ──
+#   --reasoning-replay {full,keep-last,none}   thinking delivery to the agent
+#       keep-last (default): tool-call responses carry thinking in the
+#       reasoning_content field (forge >=0.7.5 defaults to 'none' — visible
+#       thinking would silently disappear; see CLAUDE.md Thinking section).
+#   --convergence-nudge-after N                0 = off (default; experimental,
+#       measured NOT to fix open-ended task drift).
+#   --context-budget N                         Layer-1 compaction budget in
+#       tokens (default 12000; profile override wins). Measured 2026-08-31:
+#       Qwen3.8-27B tool-calling collapses at ~20-27K prompts — cap keeps
+#       sessions under the cliff. Raise only for text-heavy single-shot work.
+
 # Workspace root — path safety restricts file operations to this tree.
 # Set to "." for current directory, or an absolute path.
 workspace: "."
