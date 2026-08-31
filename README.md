@@ -255,7 +255,7 @@ limits; workspace root for path safety; secret patterns. Full reference in
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 687 tests (~27s)
+pytest tests/unit/ -q          # 692 tests (~28s)
 python eval/scripts/run_forge_eval.py --mode proxy --runs 5   # the eval behind the tables above
 ```
 
