@@ -70,7 +70,7 @@ def serve(
     vram_margin: float,
     auto_no_thinking: bool,
     vision_captioning: bool,
-    convergence_nudge_after: int = 0,
+    convergence_nudge_after: int,
     reasoning_replay: str,
 ) -> None:
     """Start the coding-guardrails proxy server."""
