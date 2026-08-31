@@ -55,11 +55,41 @@ class TestLeakDetection:
         assert rule.check(call).action == Action.ALLOW
 
     def test_non_string_args_ignored(self, rule):
-        call = ToolCall(tool="bash", args={"command": ["echo", rule.token], "n": 3})
+        """Non-string leaves (ints, bools, None) never carry the token."""
+        call = ToolCall(tool="bash", args={"command": "echo hi", "n": 3,
+                                            "flag": True, "empty": None})
         assert rule.check(call).action == Action.ALLOW
+
+    def test_token_in_flat_list_blocks(self, rule):
+        """The recursive scan catches tokens inside flat list args (exfil)."""
+        call = ToolCall(tool="bash", args={"command": ["echo", rule.token]})
+        assert rule.check(call).action == Action.BLOCK
 
     def test_record_is_noop(self, rule):
         rule.record([ToolCall(tool="bash", args={"command": "ls"})])
+
+    def test_block_canary_nested_one_level(self, rule):
+        call = ToolCall(tool="write", args={"write": {"content": rule.token}})
+        result = rule.check(call)
+        assert result.action == Action.BLOCK
+        assert "write.content" in (result.reason or "")
+
+    def test_block_canary_nested_list(self, rule):
+        call = ToolCall(tool="bash", args={"items": [{"url": rule.token}]})
+        result = rule.check(call)
+        assert result.action == Action.BLOCK
+        assert "items[0].url" in (result.reason or "")
+
+    def test_block_canary_deep_nesting(self, rule):
+        call = ToolCall(tool="bash", args={"data": {"a": {"b": rule.token}}})
+        result = rule.check(call)
+        assert result.action == Action.BLOCK
+        assert "data.a.b" in (result.reason or "")
+
+    def test_clean_nested_args_allowed(self, rule):
+        assert rule.check(ToolCall(tool="write", args={"write": {"content": "hello"}})).action == Action.ALLOW
+        assert rule.check(ToolCall(tool="bash", args={"items": [{"url": "https://x.i/"}]})).action == Action.ALLOW
+        assert rule.check(ToolCall(tool="bash", args={"data": {"a": {"b": "ok"}}})).action == Action.ALLOW
 
 
 class TestMiddlewareIntegration:
