@@ -67,6 +67,13 @@ Our `SafeLlamafileClient` extends Forge's client without modifying Forge itself:
 - Injects a default 8192 token cap to prevent runaway generation
 - No modifications to Forge required — `pip install forge-guardrails` works as-is
 
+**Forge floor (>=0.8.1):** we pass `reasoning_replay` into Forge's response
+converters (0.7.5+) and `extra_headers` through the send wrappers (0.8.0+);
+0.8.1 additionally ships the malformed-tool-call 500 rescue. The client's
+send overrides are thin wrappers around Forge's own paths — Forge owns the
+500 rescue, argument decoding, credentials, and envelope guards, so upgrades
+land automatically instead of being shadowed by stale copies.
+
 ## Layer 2: Coding Guardrails (Safety)
 
 13 composable rules:

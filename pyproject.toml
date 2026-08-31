@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coding-guardrails"
-version = "0.18.1"
+version = "0.19.0"
 description = "A safety + reliability proxy for coding agents on local LLMs. Forge rescue/retry/validation + 13 composable guardrail rules. Measured on the Forge 30-scenario eval: 100% completion, up to 95% accuracy."
 requires-python = ">=3.12"
 license = "MIT"
@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "forge-guardrails>=0.7.0",
+    "forge-guardrails>=0.8.1,<1.0",
     "pyyaml>=6.0",
     "click>=8.0",
     "pytest-asyncio>=1.4.0",

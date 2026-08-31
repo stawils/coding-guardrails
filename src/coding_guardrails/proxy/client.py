@@ -1,32 +1,27 @@
-"""Extended Forge client that preserves thinking tokens.
+"""Extended Forge client: outbound role normalization + thinking retention.
 
-Two extensions over Forge's LlamafileClient:
-1. max_tokens / n_predict forwarding to prevent runaway generation
-2. Thinking token capture — when the model thinks but returns no tool
-   call, Forge strips the thinking and returns empty TextResponse.
-   This client preserves thinking as TextResponse content so Layer 1
-   can log it and decide what to do (retry with context, feed to agent).
+Three extensions over Forge's LlamafileClient, all as thin wrappers around the
+parent's send paths (no Forge source re-implementation):
+1. Outbound role normalization — hoist system/developer messages to the front
+   so the qwen3_5 jinja template's "System message must be at the beginning"
+   guard never fires (pi project-instructions arrive as trailing system msgs).
+2. Acceptance-finalization prefill (F9 fix) — append a JSON prefill as a
+   trailing assistant message so pi acceptance reports come back structured.
+3. Thinking retention — captured reasoning (ToolCall.reasoning) is surfaced as
+   ``client.last_thinking`` for Layer 1's logging + retry-nudge injection.
 
-Does NOT modify Forge source. Overrides only the two send paths that
-strip thinking (_send_native, _send_prompt) to preserve reasoning.
+Thin wrappers mean Forge's own improvements (malformed-500 tool-call rescue,
+credential forwarding, envelope guards, argument decoding) are inherited on
+upgrade instead of being shadowed by a copy of stale internals.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from forge.clients.llamafile import (
-    LlamafileClient,
-    _extract_think_tags,
-    _merge_consecutive,
-    _downgrade_messages,
-    extract_tool_call,
-    format_tool,
-    build_tool_prompt,
-)
-from forge.core.workflow import LLMResponse, TextResponse, ToolCall, ToolSpec
+from forge.clients.llamafile import LlamafileClient
+from forge.core.workflow import LLMResponse, ToolSpec
 from forge.errors import BackendError
 
 from coding_guardrails.proxy.handler import _normalize_message_roles
@@ -158,14 +153,22 @@ class SafeLlamafileClient(LlamafileClient):
         messages: list[dict[str, str]],
         tools: list[ToolSpec] | None = None,
         sampling: dict[str, Any] | None = None,
+        passthrough: dict[str, Any] | None = None,
+        inbound_anthropic_body: dict[str, Any] | None = None,
+        raw_openai_tools: Any = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
-        """Send and capture thinking tokens."""
+        """Dispatch through Forge's send path, then retain captured reasoning."""
         self.last_thinking = ""
 
-        result = await super().send(messages, tools=tools, sampling=sampling)
-        # Capture thinking from the response
-        if hasattr(result, 'thinking') and result.thinking:
-            self.last_thinking = result.thinking
+        result = await super().send(
+            messages, tools=tools, sampling=sampling, passthrough=passthrough,
+            inbound_anthropic_body=inbound_anthropic_body,
+            raw_openai_tools=raw_openai_tools, extra_headers=extra_headers,
+        )
+        # Retain thinking for Layer 1 (logging + retry-nudge injection).
+        if isinstance(result, list) and result and getattr(result[0], "reasoning", None):
+            self.last_thinking = result[0].reasoning
         return result
 
     async def _send_native(
@@ -175,77 +178,27 @@ class SafeLlamafileClient(LlamafileClient):
         sampling: dict[str, Any] | None = None,
         passthrough: dict[str, Any] | None = None,
         raw_openai_tools: Any = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
-        """Native FC send that preserves reasoning in empty-text responses."""
-        merged = _merge_consecutive(messages)
-        merged = self._inject_acceptance_prefill(merged)
-        # Outbound role guard: forge/context machinery may append a trailing
-        # system/developer message after history (pi project-instructions). The
-        # qwen3_5 jinja template 400s ("System message must be at the beginning")
-        # if any system message appears after non-system content. Normalize the
-        # final wire list here — the invariant must hold at the backend boundary.
-        merged = _normalize_message_roles(merged)
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": merged,
-            "cache_prompt": self._cache_prompt,
-        }
-        self._apply_slot_id(body)
-        self._apply_sampling(body, sampling)
-        if tools:
-            body["tools"] = [format_tool(t) for t in tools]
+        """Thin wrapper: role-normalize + acceptance-prefill, then Forge's native path.
 
-        resp = await self._http.post(
-            f"{self.base_url}/chat/completions", json=body
-        )
-        if resp.status_code == 500:
-            return TextResponse(content=resp.text)
-        if resp.status_code != 200:
-            logging.getLogger("coding_guardrails.client").warning(
-                "outbound roles=%s msgs=%d first=%r (resp %d)",
-                [m.get("role") for m in body.get("messages", [])],
-                len(body.get("messages", [])),
-                body.get("messages", [{}])[0],
-                resp.status_code,
+        Forge 0.8.1+ owns the malformed-tool-call 500 rescue, argument decoding
+        and envelope guards — delegate instead of re-implementing (see module
+        docstring). Only the outbound role invariant and the acceptance prefill
+        are applied here; everything else is inherited.
+        """
+        prepared = self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        try:
+            return await super()._send_native(
+                prepared, tools=tools, sampling=sampling, passthrough=passthrough,
+                raw_openai_tools=raw_openai_tools, extra_headers=extra_headers,
             )
-            raise BackendError(resp.status_code, resp.text)
-        data = resp.json()
-        self._record_usage(data)
-
-        top_choice = data["choices"][0]
-        choice = top_choice["message"]
-        raw_reasoning = choice.get("reasoning_content", "") or ""
-        raw_content = choice.get("content", "") or ""
-
-        # Store thinking for Layer 1 to read
-        resolved_reasoning = self._resolve_reasoning(raw_reasoning, raw_content)
-        if resolved_reasoning:
-            self.last_thinking = resolved_reasoning
-
-        raw_tool_calls = choice.get("tool_calls")
-        if raw_tool_calls:
-            result_calls: list[ToolCall] = []
-            for i, tc_entry in enumerate(raw_tool_calls):
-                tc_func = tc_entry["function"]
-                args = tc_func.get("arguments", "{}")
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except json.JSONDecodeError:
-                        return TextResponse(content=choice.get("content", args))
-                result_calls.append(ToolCall(
-                    tool=tc_func["name"],
-                    args=args,
-                    reasoning=resolved_reasoning if i == 0 else None,
-                ))
-            return result_calls
-
-        # TextResponse — if content is empty but we have reasoning,
-        # preserve it so Layer 1 sees non-empty text and can log/think.
-        _, cleaned = _extract_think_tags(raw_content)
-        if not cleaned.strip() and raw_reasoning:
-            return TextResponse(content=raw_reasoning)
-        return TextResponse(content=cleaned)
+        except BackendError as exc:
+            logging.getLogger("coding_guardrails.client").warning(
+                "outbound roles=%s msgs=%d (resp %s)",
+                [m.get("role") for m in prepared], len(prepared), exc.status_code,
+            )
+            raise
 
     async def _send_prompt(
         self,
@@ -253,59 +206,18 @@ class SafeLlamafileClient(LlamafileClient):
         tools: list[ToolSpec] | None,
         sampling: dict[str, Any] | None = None,
         passthrough: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
-        """Prompt-injected send that preserves reasoning in empty-text responses."""
-        prepared = _merge_consecutive(_downgrade_messages(messages))
-        prepared = self._inject_acceptance_prefill(prepared)
-        # Outbound role guard (see _send_native): keep the wire list valid for
-        # the qwen3_5 jinja template — system/developer at the front.
-        prepared = _normalize_message_roles(prepared)
-        if tools:
-            tool_prompt = build_tool_prompt(tools)
-            prepared[0] = {
-                **prepared[0],
-                "content": tool_prompt + "\n\n" + prepared[0]["content"],
-            }
-
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": prepared,
-            "cache_prompt": self._cache_prompt,
-        }
-        self._apply_slot_id(body)
-        self._apply_sampling(body, sampling)
-
-        resp = await self._http.post(
-            f"{self.base_url}/chat/completions", json=body
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        self._record_usage(data)
-
-        top_choice = data["choices"][0]
-        content = top_choice["message"].get("content", "")
-        reasoning_content = top_choice["message"].get("reasoning_content", "")
-
-        if tools:
-            think_text, cleaned = _extract_think_tags(content)
-            tool_names = [t.name for t in tools]
-            tc_list = extract_tool_call(cleaned, tool_names)
-
-            # Store thinking
-            resolved = self._resolve_reasoning(reasoning_content, think_text)
-            if resolved:
-                self.last_thinking = resolved
-
-            if tc_list:
-                tc_list[0].reasoning = resolved
-                return tc_list
-
-            # No tool call found — preserve thinking if content is empty
-            if not cleaned.strip() and (reasoning_content or think_text):
-                preserved = reasoning_content or think_text
-                return TextResponse(content=preserved)
-
-        # Strip think tags from TextResponse — keep clean content
-        if content:
-            _, content = _extract_think_tags(content)
-        return TextResponse(content=content)
+        """Thin wrapper: role-normalize + acceptance-prefill, then Forge's prompt path."""
+        prepared = self._inject_acceptance_prefill(_normalize_message_roles(messages))
+        try:
+            return await super()._send_prompt(
+                prepared, tools=tools, sampling=sampling, passthrough=passthrough,
+                extra_headers=extra_headers,
+            )
+        except BackendError as exc:
+            logging.getLogger("coding_guardrails.client").warning(
+                "outbound roles=%s msgs=%d (resp %s)",
+                [m.get("role") for m in prepared], len(prepared), exc.status_code,
+            )
+            raise

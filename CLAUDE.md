@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 564 tests, ~2s
+pytest tests/unit/ -q          # 669 tests (~25s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -89,6 +89,13 @@ No enforcement, no injection, no modification. The proxy is a transparent pass-t
 ### Thinking Capture & Injection
 
 Layer 1 captures thinking tokens from the model's response. On retry (failed validation), the thinking is injected into the retry nudge so the model doesn't re-think from scratch.
+
+**Wire delivery (reasoning flows to the agent):** forge-guardrails >=0.7.5 defaults its
+response converters to `reasoning_replay="none"` — thinking captured for observability only,
+never delivered to the agent (it looked like "thinking disabled"). Our proxy passes
+`--reasoning-replay keep-last` (default): tool-call responses carry the latest thinking in the
+`reasoning_content` field. `--reasoning-replay full` restores thinking-as-content; `none` drops
+it. Forge floor 0.8.1+ required (`extra_headers` = 0.8.0+, malformed-500 rescue = 0.8.1+).
 
 ### Nudges vs Blocks
 
@@ -252,11 +259,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 664 tests
+pytest tests/unit/ -q              # All 669 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 664 tests must pass before committing.
+All 669 tests must pass before committing.
 
 ## Eval
 
@@ -288,7 +295,7 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 664 unit tests must pass
+- All 669 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -319,7 +326,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 664 tests MUST pass
+pytest tests/unit/ -q          # All 669 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

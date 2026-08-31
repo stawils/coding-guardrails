@@ -327,7 +327,8 @@ async def handle_chat_completions(
     rescue_enabled: bool = True,
     auto_no_thinking: bool = True,
     vision_captioning: bool = True,
-    convergence_nudge_after: int = 8,
+    convergence_nudge_after: int = 0,
+    reasoning_replay: str = "keep-last",
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Handle /v1/chat/completions with Forge Layer 1 + our Layer 2.
 
@@ -560,8 +561,8 @@ async def handle_chat_completions(
         if RESPOND_TOOL_NAME in tool_names_lower:
             logger.info("L1 done %s (respond() passed through — declared in request)", attempts_tag)
             if is_stream:
-                return tool_calls_to_sse_events(respond_calls, model=model_name)
-            return tool_calls_to_openai(respond_calls, model=model_name)
+                return tool_calls_to_sse_events(respond_calls, model=model_name, reasoning_replay=reasoning_replay)
+            return tool_calls_to_openai(respond_calls, model=model_name, reasoning_replay=reasoning_replay)
         # Convert respond() to text — most agents (Pi, Cline, etc.)
         # don't have a respond tool. The model is saying "I'm done."
         msg = respond_calls[0].args.get("message", respond_calls[0].args.get("answer", ""))
@@ -621,5 +622,5 @@ async def handle_chat_completions(
     logger.info("PASSED (%s)", _fmt_elapsed(elapsed_l2))
 
     if is_stream:
-        return tool_calls_to_sse_events(other_calls, model=model_name)
-    return tool_calls_to_openai(other_calls, model=model_name)
+        return tool_calls_to_sse_events(other_calls, model=model_name, reasoning_replay=reasoning_replay)
+    return tool_calls_to_openai(other_calls, model=model_name, reasoning_replay=reasoning_replay)

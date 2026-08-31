@@ -7,7 +7,7 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
-| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (MTP) | 13.44 GB | 19.0 GB | **128K** (q4_0 KV) | 27B | Dense (hybrid) | ~68 tok/s |
+| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (MTP) | 13.44 GB | 18.2 GB | **128K** (q4_0 KV) | 27B | Dense (hybrid) | ~68 tok/s |
 | **Qwen3.6-27B** | UD-Q4_K_XL | 17.9 GB | 19.5 GB | **48K** (q8_0 KV) | 27B | Dense (hybrid) | ~20-30 tok/s |
 | **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
@@ -106,6 +106,10 @@ gap — 100% on all four families** — which is why it is the new default worke
   we run **131072 (128K)** with **q4_0 KV + MTP draft** (~20.5 GB VRAM, ~2 GB headroom;
   measured 2026-08-05). q8_0 KV + MTP OOMs at 128K; q4_0 KV halves KV and fits the draft.
   UD-Q4_K_XL (17.9 GB) would cap ctx at ~16-24K — chose context over quant quality.
+  **Incremental VRAM re-measured 2026-08-31: ~18.1 GB** (18,897 → 796 MiB free on load,
+  @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. Profile gate = 18.2 GB
+  (footprint + 0.1; below ~18.4 desktop worst-case baseline, above the OOM floor; failure
+  below it is a clean 503 → fleet L2 fallback, not a crash).
 - Native vision (images+video) in the source model; we run the text GGUF for agent work.
   The launcher auto-attaches a sibling `mmproj-*.gguf`, and the proxy captions inbound
   images (`[image: caption]` text blocks) so vision works through the text-only guardrail

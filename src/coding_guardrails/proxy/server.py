@@ -55,7 +55,8 @@ class GuardrailProxyServer:
         backend_manager=None,  # optional coding_guardrails.server.manager.BackendManager
         auto_no_thinking: bool = True,
         vision_captioning: bool = True,
-        convergence_nudge_after: int = 8,
+        convergence_nudge_after: int = 0,
+        reasoning_replay: str = "keep-last",
     ) -> None:
         self._client = client
         self._context_manager = context_manager
@@ -70,6 +71,7 @@ class GuardrailProxyServer:
         self._auto_no_thinking = auto_no_thinking
         self._vision_captioning = vision_captioning
         self._convergence_nudge_after = convergence_nudge_after
+        self._reasoning_replay = reasoning_replay
         self._server: asyncio.Server | None = None
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
@@ -155,6 +157,10 @@ class GuardrailProxyServer:
             elif method == "GET" and path == "/v1/models":
                 await self._handle_models(writer)
             elif method == "POST" and path == "/v1/chat/completions":
+                await self._handle_completions(writer, body_bytes)
+            # Alias for llama-server's unversioned endpoint (forge 0.8.2 compat).
+            # Some OpenAI-compatible clients (e.g. pi-llama-cpp) POST here.
+            elif method == "POST" and path == "/chat/completions":
                 await self._handle_completions(writer, body_bytes)
             elif method == "OPTIONS":
                 await self._send_cors_preflight(writer)
@@ -299,6 +305,7 @@ class GuardrailProxyServer:
                 auto_no_thinking=self._auto_no_thinking,
                 vision_captioning=self._vision_captioning,
                 convergence_nudge_after=self._convergence_nudge_after,
+                reasoning_replay=self._reasoning_replay,
             )
         except Exception as exc:
             logger.exception("Handler error")

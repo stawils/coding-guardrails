@@ -47,8 +47,10 @@ def main() -> None:
               help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. Tool requests keep thinking on. Default on.")
 @click.option("--vision-captioning/--no-vision-captioning", default=True,
               help="Caption inbound images via the (multimodal) backend and substitute text blocks — the guardrails pipeline is text-only. Requires the backend to run with an mmproj. Default on.")
-@click.option("--convergence-nudge-after", default=8, type=int,
-              help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables. Targets the keeps-going terminal-discipline failure. Default 8.")
+@click.option("--convergence-nudge-after", default=0, type=int,
+              help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables (default). Experimental — measured NOT to fix open-ended task drift (2026-08-31); bounded task templates do. Default 0.")
+@click.option("--reasoning-replay", default="keep-last", type=click.Choice(["full", "keep-last", "none"]),
+              help="How much captured model thinking to deliver to the agent in responses: 'full' (thinking as message content), 'keep-last' (thinking in the reasoning_content field, forge's recommended channel), or 'none' (drop — observability only). Default keep-last.")
 def serve(
     backend_url: str,
     model: str,
@@ -68,7 +70,8 @@ def serve(
     vram_margin: float,
     auto_no_thinking: bool,
     vision_captioning: bool,
-    convergence_nudge_after: int,
+    convergence_nudge_after: int = 0,
+    reasoning_replay: str,
 ) -> None:
     """Start the coding-guardrails proxy server."""
     logging.basicConfig(
@@ -112,6 +115,7 @@ def serve(
             auto_no_thinking=auto_no_thinking,
             vision_captioning=vision_captioning,
             convergence_nudge_after=convergence_nudge_after,
+            reasoning_replay=reasoning_replay,
         ))
     except KeyboardInterrupt:
         click.echo("\nStopped.")
@@ -134,7 +138,8 @@ async def _run_proxy(
     vram_margin: float = 2.0,
     auto_no_thinking: bool = True,
     vision_captioning: bool = True,
-    convergence_nudge_after: int = 8,
+    convergence_nudge_after: int = 0,
+    reasoning_replay: str = "keep-last",
 ) -> None:
     """Async proxy startup and run loop."""
     from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -215,6 +220,7 @@ async def _run_proxy(
         auto_no_thinking=auto_no_thinking,
         vision_captioning=vision_captioning,
         convergence_nudge_after=convergence_nudge_after,
+        reasoning_replay=reasoning_replay,
     )
     await server.start()
     click.echo(f"\n  Proxy ready at http://{host}:{port}")

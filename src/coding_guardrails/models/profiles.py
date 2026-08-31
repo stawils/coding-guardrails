@@ -87,8 +87,7 @@ PROFILES: dict[str, ModelProfile] = {
         family="Qwen3.8",
         quant="UD-Q3_K_XL",
         file_size_gb=13.44,
-        vram_required_gb=17.6,  # gate floor: 2026-08-21 desktop baseline drift (rustdesk+venv ~0.5GB) left 18.4 free < 19.0 — model loads+runs proven at 18.95 free
-        # measured with vision projector auto-attached); gate compares FREE VRAM
+        vram_required_gb=18.2,  # gate floor: incremental footprint ≈ 18.1 GB measured 2026-08-31 (18,897 MiB free → 796 MiB free on load @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. 18.2 = footprint + 0.1, below the ~18.4 desktop worst-case baseline (rustdesk+venv), above the OOM floor. Failure mode below it is a clean 503 → fleet L2 fallback (queue-timeout), not a crash.
         context_tokens=131072,
         architecture="dense",
         active_params_b=27.0,
