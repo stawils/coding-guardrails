@@ -315,12 +315,15 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 — tool_selection 5/5 (+stateful) and data_gap_recovery_extended 100% fix LFM2.5's genuine gaps;
 only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay weak.
 
-**Eval-harness note (2026-09-08):** the vendored forge eval wrapper drifted from forge's client
-signature — `CountingClientWrapper.send/send_stream` missing `passthrough`/`inbound_anthropic_body`/
-`raw_openai_tools` kwargs → TypeError blocked ALL evals (direct + proxy). Fix: mirror the full
-`LLMClient` signature. `.vendors/forge` is a NESTED git repo (outer project tracks 0 of its files),
-so local fixes must be re-applied after any vendor refresh (patch pattern in the git history of
-this file / eval runs).
+**Eval-harness sync (2026-09-08, v0.20.1):** the vendored `tests/eval` harness was 49 commits
+stale (v0.7.0-era); its `CountingClientWrapper` lacked the `passthrough`/`inbound_anthropic_body`/
+`raw_openai_tools` kwargs forge now passes → TypeError blocked ALL evals (direct + proxy). Upstream
+forge fixed it (upstream main == installed 0.9.5). Resolution: `.vendors/forge/tests/eval/` synced
+from forge upstream (hack removed — fix built in) and `eval/scripts/run_forge_eval.py` updated to
+the 0.9.5 field names (`completeness`→`completed`, `accuracy`→`correct`, `validate_error`→
+`validation_error`, `completed_runs`/`total_runs`/`correctness_rate`→`completed_count`/
+`attempted_count`/`score`). `.vendors/forge` is a NESTED git repo the outer project tracks 0 of its
+files — re-sync `tests/eval` from forge upstream after any vendor refresh.
 
 ## Development Guidelines
 
