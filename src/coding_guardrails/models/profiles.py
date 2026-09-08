@@ -168,6 +168,35 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1",
                      "-ub", "256", "-ctk", "q8_0", "-ctv", "q8_0"],
     ),
+    # ── MiniCPM5-2B (Dense, 2.52B, 131K ctx, standard Llama arch, Q4_K_M) ──
+    # OpenBMB MiniCPM5-2B (released 2026-09-05), Apache-2.0. 2,516,756,480
+    # params, 42 layers, GQA 16 Q / 2 KV heads (KV cache is tiny → 131072 ctx
+    # fits a 24 GB card with huge headroom). Standard LlamaForCausalLM arch —
+    # llama.cpp loads it directly (no custom kernels), boots on the 2026-07
+    # build. Native tool calling + agent training; emits XML-style tool calls
+    # that llama.cpp forms into clean OpenAI tool_calls.
+    # MEASURED 2026-09-08 (direct + through coding-guardrails proxy, Q4_K_M):
+    #   boot clean, ~182 tok/s (RTX 3090 Ti), reasoning_content captured.
+    #   Direct eval subset: 30/30 completion (100%), 25/30 (83%) accuracy;
+    #   proxy-mode subset: 15/15 (100%) — incl. tool_selection 5/5 (fixes the
+    #   LFM2.5-2.6B 0/5: this model calls respond()). data-heavy
+    #   data_gap_recovery_extended 60% vs LFM2.5 0%. Full 150-run eval pending.
+    # Reasoning model — thinks at length before answering (needs a non-trivial
+    # max_tokens budget; content can truncate to '' if the budget is tiny).
+    # Card sampling: temperature=1.0, top_p=0.95. No MTP/DSpark in this file.
+    "MiniCPM5-2B-Q4_K_M": ModelProfile(
+        name="MiniCPM5-2B-Q4_K_M",
+        family="MiniCPM5",
+        quant="Q4_K_M",
+        file_size_gb=1.56,
+        vram_required_gb=3.0,  # 1.56 weights + tiny GQA KV (2 KV heads) + buffers
+        context_tokens=131072,
+        architecture="dense",
+        active_params_b=2.52,
+        swe_bench_verified=None,
+        sampling={"temperature": 1.0, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+    ),
     "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
         name="Qwen3.5-9B-UD-Q4_K_XL",
         family="Qwen3.5",

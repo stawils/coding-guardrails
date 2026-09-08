@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 692 tests (~28s)
+pytest tests/unit/ -q          # 693 tests (~28s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -222,6 +222,20 @@ coding-guardrails server start -m Ornith-1.0-9B-Q8_0 --ctx 200000
 coding-guardrails server start -m LFM2.5-2.6B-BF16
 #   (equivalent raw llama-server: --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1)
 
+# MiniCPM5-2B Q4_K_M (DEFAULT tiny/edge tier — 131K ctx, ~3 GB VRAM, ~182 tok/s)
+#   OpenBMB, Apache-2.0, 1.56 GB, standard Llama arch (42 layers, GQA 16Q/2KV) — boots on the
+#   2026-07 llama.cpp build (no custom kernels; generic OpenAI tool calls work without a
+#   minicpm5 parser). Reasoning model (reasoning_content captured; thinks long — give
+#   max_tokens real headroom).
+#   Full 150-run proxy Forge eval 2026-09-08 (v0.20.0): 150/150 completion (100%), 128/150
+#   accuracy (85%). REPLACES LFM2.5-2.6B as the tiny tier: tool_selection 5/5 + stateful 5/5
+#   (LFM2.5 0/5 — never calls respond()), data_gap_recovery_extended 100% (LFM2.5 0%), all
+#   compaction_chain 100%. Remaining weak spots: argument_transformation 0-20%,
+#   inconsistent_api_recovery 40% (small-model data-heavy ceiling; Qwen3.8-27B does 100%).
+#   Card sampling temp 1.0 / top_p 0.95. No MTP tensors (DSpark spec-decoder is a separate repo).
+coding-guardrails server start -m MiniCPM5-2B-Q4_K_M
+#   (equivalent raw llama-server: -c 131072 --temp 1.0 --top-p 0.95 -np 1 --jinja)
+
 # Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate
 coding-guardrails serve \
@@ -265,11 +279,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 692 tests
+pytest tests/unit/ -q              # All 693 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 692 tests must pass before committing.
+All 693 tests must pass before committing.
 
 ## Eval
 
@@ -297,11 +311,21 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
 that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.5: 139/150
 (92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.
+**MiniCPM5-2B (added v0.20.0 as the tiny tier): 150/150 (100%) completion, 128/150 (85%) accuracy**
+— tool_selection 5/5 (+stateful) and data_gap_recovery_extended 100% fix LFM2.5's genuine gaps;
+only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay weak.
+
+**Eval-harness note (2026-09-08):** the vendored forge eval wrapper drifted from forge's client
+signature — `CountingClientWrapper.send/send_stream` missing `passthrough`/`inbound_anthropic_body`/
+`raw_openai_tools` kwargs → TypeError blocked ALL evals (direct + proxy). Fix: mirror the full
+`LLMClient` signature. `.vendors/forge` is a NESTED git repo (outer project tracks 0 of its files),
+so local fixes must be re-applied after any vendor refresh (patch pattern in the git history of
+this file / eval runs).
 
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 692 unit tests must pass
+- All 693 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -332,7 +356,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 692 tests MUST pass
+pytest tests/unit/ -q          # All 693 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

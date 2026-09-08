@@ -13,6 +13,7 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
+| **MiniCPM5-2B** | Q4_K_M | 1.56 GB | ~3.0 GB | **131K** | 2.52B | Dense | ~182 tok/s |
 
 ## Forge eval results (150 runs, proxy mode)
 
@@ -29,6 +30,7 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 | **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** | 2026-08-08_144837Z |
 | **Qwen3.6-27B** | **149/150 (99.3%)** | 141/150 (94%) | 2026-08-07_151927Z |
 | **LFM2.5-2.6B** | 139/150 (92.7%) | 100/140 (71%) — card caveat confirmed | 2026-08-08_153811Z |
+| **MiniCPM5-2B** | **150/150 (100%)** | **128/150 (85%)** — tool_selection 5/5 (fixes LFM2.5 0/5); data_gap_recovery_extended 100% | 2026-09-08_111510Z |
 
 Shared weakness across the smaller models: data-heavy recovery scenarios
 (`data_gap_recovery_extended`, `argument_transformation`, `inconsistent_api_recovery`,
@@ -36,6 +38,40 @@ Shared weakness across the smaller models: data-heavy recovery scenarios
 gap — 100% on all four families** — which is why it is the new default worker
 (128K ctx, MTP speed, vision-capable). Qwen3.5-9B remains the fast 200K fallback.
 
+
+## MiniCPM5-2B (Q4_K_M — tiny-tier, 131K context, Apache-2.0)
+
+- OpenBMB MiniCPM5-2B, released 2026-09-05, **Apache-2.0**. **2.52B dense params**
+  (2,516,756,480), standard **LlamaForCausalLM** arch (42 layers, GQA 16 Q / 2 KV) —
+  llama.cpp loads it directly with no custom kernels; boots on the 2026-07 build.
+- **Official Q4_K_M GGUF** (`openbmb/MiniCPM5-2B-GGUF`), 1.56 GB on disk. 2 KV heads →
+  the 131072 (128K) KV cache is tiny → **~3 GB total VRAM** on a 24 GB card.
+- Native 131072 (128K) context, en/zh. **Reasoning model** — emits/receives
+  `reasoning_content`; thinks at length before answering, so give `max_tokens` real
+  headroom (a budget as small as 120 can be eaten entirely by thinking).
+- Tool calling via `--jinja`: the model emits XML-style tool calls which the llama.cpp/server
+  (July build) forms into clean OpenAI `tool_calls`; full tool loop (call → result → grounded
+  answer) verified end-to-end.
+- **Measured 2026-09-08** (direct + through the coding-guardrails proxy, Q4_K_M, RTX 3090 Ti):
+  ~182 tok/s. Direct subset 30/30 (100%) completion, 25/30 (83%) accuracy. Proxy-mode subset
+  15/15 (**100%**) — **tool_selection 5/5** (does call `respond()`; fixes LFM2.5's genuine 0/5)
+  and data-heavy `data_gap_recovery_extended` 60% (LFM2.5 0%). **Full 150-run proxy eval:
+  150/150 (100%) completion, 128/150 (85%) accuracy** — tool_selection 5/5 (+stateful 5/5), data_gap
+  family 80-100%, all compaction_chain 100%; remaining small-model weak spots are
+  `argument_transformation` 0-20% and `inconsistent_api_recovery` 40% (vs Qwen3.8-27B's 100%).
+- Card sampling: temperature 1.0, top_p 0.95. License Apache-2.0. No MTP tensors in this file
+  (the official DSpark speculative decoder is a separate repo/GGUF).
+- This slots in as the fast/edge tier replacement for LFM2.5-2.6B (better tool-select
+  discipline + data-heavy recovery at ~1/3 the size and Apache-2.0).
+
+### MiniCPM5-2B boot command
+```bash
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/MiniCPM5-2B-Q4_K_M.gguf \
+  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -np 1 -v
+# ~182 tok/s, ~3 GB VRAM. Reasoning model: keep max_tokens generous.
+```
 
 ## LFM2.5-2.6B (BF16 — maximum precision, 128K context)
 
@@ -225,6 +261,18 @@ llama-server \
   --jinja --flash-attn auto \
   --port 8080 -c 128000 \
   --temp 0.1 --top-k 50 --repeat-penalty 1.1 -np 1
+```
+
+### MiniCPM5-2B (131K context, Q4_K_M — tiny/edge tier)
+
+```bash
+llama-server \
+  -m ~/.local/share/coding-guardrails/models/MiniCPM5-2B-Q4_K_M.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 131072 \
+  --temp 1.0 --top-p 0.95 -np 1
+# ~182 tok/s, ~3 GB VRAM; reasoning model — keep max_tokens generous.
+# Manager equivalent: cg server start -m MiniCPM5-2B-Q4_K_M
 ```
 
 ### Qwen3.8-27B (128K context on 24 GB, MTP)

@@ -53,6 +53,11 @@ SOURCES: dict[str, ModelSource] = {
         filename="LFM2.5-2.6B-BF16.gguf",
         license="LFM Open License v1.0",
     ),
+    "MiniCPM5-2B-Q4_K_M": ModelSource(
+        repo_id="openbmb/MiniCPM5-2B-GGUF",
+        filename="MiniCPM5-2B-Q4_K_M.gguf",
+        license="Apache-2.0",
+    ),
     "Qwen3.8-27B-UD-Q3_K_XL": ModelSource(
         repo_id="unsloth/Qwen3.8-27B-GGUF",
         filename="Qwen3.8-27B-UD-Q3_K_XL.gguf",
