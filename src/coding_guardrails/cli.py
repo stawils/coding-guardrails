@@ -24,7 +24,8 @@ def main() -> None:
 
 @main.command()
 @click.option("--backend-url", required=True, help="URL of the llama-server backend (e.g. http://localhost:8080)")
-@click.option("--model", required=True, help="Model name for sampling defaults (e.g. gemma-4-26B-A4B-it-qat-UD-Q4_K_XL)")
+@click.option("--model", "models", required=True, multiple=True,
+              help="Model profile(s) this proxy serves. Repeat for a single-port multi-model proxy (unload-before-load swap), e.g. --model Qwen3.8-27B-UD-Q3_K_XL --model MiniCPM5-2B-Q4_K_M.")
 @click.option("--port", default=8081, type=int, help="Proxy listen port (default: 8081)")
 @click.option("--host", default="127.0.0.1", help="Proxy listen host")
 @click.option("--config", "config_path", help="Path to guardrail-config.yaml")
@@ -55,7 +56,7 @@ def main() -> None:
               help="Layer-1 compaction budget in tokens (TieredCompact fires at ~75% of it). Measured 2026-08-31: Qwen3.8-27B tool-calling is 100%% reliable at <=~19K real tokens through the proxy and collapses to prose at ~20-27K — the 128K profile budget never compacted before the cliff. Default 12000 (TieredCompact -> ~11K prompts, the measured solid zone; 13-19K compacted prompts ran ~2/3 flaky regardless of temperature, 2026-08-31). Raise only for text-heavy single-shot work.")
 def serve(
     backend_url: str,
-    model: str,
+    models: tuple[str, ...],
     port: int,
     host: str,
     config_path: str | None,
@@ -95,14 +96,14 @@ def serve(
 
     click.echo(f"Starting coding-guardrails proxy on {host}:{port}")
     click.echo(f"  Backend:    {backend_url}")
-    click.echo(f"  Model:      {model}")
+    click.echo(f"  Model:      {', '.join(models)}(" + ("multi-model, unload-before-load swap" if len(models) > 1 else "single") + ")")
     click.echo(f"  Config:     {config_path or '(defaults)'}")
     click.echo(f"  Guardrails: {'disabled' if no_guardrails else 'enabled'}")
 
     try:
         asyncio.run(_run_proxy(
             backend_url=backend_url,
-            model=model,
+            models=models,
             port=port,
             host=host,
             config_path=config_path,
@@ -127,7 +128,7 @@ def serve(
 
 async def _run_proxy(
     backend_url: str,
-    model: str,
+    models: tuple[str, ...],
     port: int,
     host: str,
     config_path: str | None,
@@ -159,7 +160,7 @@ async def _run_proxy(
         base = base + "/v1"
 
     client = SafeLlamafileClient(
-        gguf_path=model,
+        gguf_path=models[0],
         base_url=base,
         mode="native",
         timeout=timeout,
@@ -175,20 +176,21 @@ async def _run_proxy(
     )
 
     # Context budget: in managed mode the backend isn't up yet (lazy), so use the
-    # model profile's context_tokens (capped by --context-budget); otherwise
-    # auto-detect from the backend, then cap the same way. The cap keeps tool
-    # sessions under the measured tool-call cliff (~20-27K real tokens on
-    # Qwen3.8-27B through the proxy, 2026-08-31 — compaction at 75% of this
-    # budget fires well before it).
+    # smallest model profile budget across all served models (capped by
+    # --context-budget) so every served model stays under its measured tool-call
+    # cliff; otherwise auto-detect from the backend, then cap the same way.
     if manage_backend:
         from coding_guardrails.models.profiles import get_profile
-        prof = get_profile(model)
-        raw_budget = prof.context_tokens if prof else 8192
-        profile_cap = prof.context_budget if prof else None
-        budget = min(raw_budget, profile_cap or context_budget)
+        budgets = []
+        for mid in models:
+            prof = get_profile(mid)
+            raw_budget = prof.context_tokens if prof else 8192
+            profile_cap = prof.context_budget if prof else None
+            budgets.append(min(raw_budget, profile_cap or context_budget))
+        budget = min(budgets)
         logging.info(
-            "Context budget: %d tokens (profile %d, profile-capped %d, flag %d; backend lazy)",
-            budget, raw_budget, profile_cap or context_budget, context_budget,
+            "Context budget: %d tokens (min across %s; flag %d; backend lazy)",
+            budget, list(models), context_budget,
         )
     else:
         ctx_len = await client.get_context_length()
@@ -213,13 +215,26 @@ async def _run_proxy(
     # ── Managed backend (lazy load + idle-unload, VRAM-gate + queue) ──
     backend_manager = None
     if manage_backend:
-        from coding_guardrails.server.manager import BackendManager, BackendConfig
-        backend_manager = BackendManager(BackendConfig(
-            profile=model, idle_timeout=idle_timeout, queue_timeout=queue_timeout,
-            vram_margin_gb=vram_margin,
-        ))
-        click.echo(f"  Managed backend: lazy load + idle-unload ({idle_timeout:.0f}s), "
-                   f"VRAM-queue ({queue_timeout:.0f}s → 503 → fleet L2)")
+        from coding_guardrails.server.manager import BackendManager, BackendConfig, MultiBackendManager
+        if len(models) == 1:
+            backend_manager = BackendManager(BackendConfig(
+                profile=models[0], idle_timeout=idle_timeout, queue_timeout=queue_timeout,
+                vram_margin_gb=vram_margin,
+            ))
+            click.echo(f"  Managed backend: lazy load + idle-unload ({idle_timeout:.0f}s), "
+                       f"VRAM-queue ({queue_timeout:.0f}s → 503 → fleet L2)")
+        else:
+            configs = {
+                mid: BackendConfig(
+                    profile=mid, idle_timeout=idle_timeout, queue_timeout=queue_timeout,
+                    vram_margin_gb=vram_margin,
+                )
+                for mid in models
+            }
+            backend_manager = MultiBackendManager(configs)
+            click.echo(f"  Managed backends: {', '.join(models)}")
+            click.echo(f"    one port, {len(models)} models — lazy load + idle-unload, "
+                       f"unload-before-load swap, VRAM-queue ({queue_timeout:.0f}s → fleet L2)")
 
     # ── Start server ──
     server = GuardrailProxyServer(
@@ -231,7 +246,7 @@ async def _run_proxy(
         serialize_requests=serialize,
         max_retries=max_retries,
         rescue_enabled=rescue_enabled,
-        model_name=model,
+        model_name=models[0],
         backend_manager=backend_manager,
         auto_no_thinking=auto_no_thinking,
         vision_captioning=vision_captioning,
@@ -332,15 +347,15 @@ def list_models() -> None:
 # ── Fleet bundle: cg up / down / status (node 1.5) ──────────────────────────
 
 @main.command("up")
-@click.option("-m", "--model", default="Qwen3.5-9B-UD-Q4_K_XL", show_default=True,
-              help="Model profile to load on demand.")
+@click.option("-m", "--model", "models", multiple=True,
+              help="Model profile(s) to serve on demand. Repeat for a multi-model proxy, e.g. -m Qwen3.8-27B-UD-Q3_K_XL -m MiniCPM5-2B-Q4_K_M (defaults to Qwen3.5-9B-UD-Q4_K_XL when omitted).")
 @click.option("--vram-margin", default=2.0, type=float, show_default=True,
               help="Free-VRAM margin (GB) above the model footprint required to load.")
 @click.option("--port", default=8081, type=int, show_default=True, help="Proxy port.")
 @click.option("--backend-port", default=8080, type=int, show_default=True, help="Backend llama-server port.")
 @click.option("--idle-timeout", default=90.0, type=float, show_default=True)
 @click.option("--queue-timeout", default=120.0, type=float, show_default=True)
-def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
+def _up(models, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     """Start the managed proxy (always-on, lazy GPU backend) — one-command fleet up."""
     import os
     import subprocess
@@ -348,6 +363,9 @@ def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     import time
 
     from coding_guardrails.server.paths import proxy_pid_file, proxy_log_file, run_dir
+
+    if not models:
+        models = ("Qwen3.5-9B-UD-Q4_K_XL",)
 
     pf = proxy_pid_file()
     if pf.exists():
@@ -365,7 +383,7 @@ def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     run_dir().mkdir(parents=True, exist_ok=True)
     argv = [
         sys.executable, "-m", "coding_guardrails", "serve",
-        "--manage-backend", "--model", model,
+        "--manage-backend",
         "--vram-margin", str(vram_margin),
         "--port", str(port),
         "--backend-url", f"http://localhost:{backend_port}",
@@ -373,6 +391,8 @@ def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
         "--queue-timeout", str(queue_timeout),
         "--serialize",
     ]
+    for mid in models:
+        argv += ["--model", mid]
     log = proxy_log_file().open("a", buffering=1)
     log.write(f"\n=== cg up {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
     proc = subprocess.Popen(
@@ -381,7 +401,7 @@ def _up(model, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     )
     pf.write_text(f"{proc.pid}\n")
     click.secho(f"Managed proxy up (pid {proc.pid}) → http://127.0.0.1:{port}/v1", fg="green")
-    click.echo(f"  model={model} | idle-unload {idle_timeout:.0f}s | queue-timeout {queue_timeout:.0f}s | log={proxy_log_file()}")
+    click.echo(f"  models={', '.join(models)} | idle-unload {idle_timeout:.0f}s | queue-timeout {queue_timeout:.0f}s | log={proxy_log_file()}")
 
 
 @main.command("down")

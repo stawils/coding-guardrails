@@ -10,7 +10,7 @@ import pytest
 
 from coding_guardrails.server import launcher
 from coding_guardrails.server import manager as manager_mod
-from coding_guardrails.server.manager import BackendConfig, BackendManager, BackendUnavailable
+from coding_guardrails.server.manager import BackendConfig, BackendManager, BackendUnavailable, MultiBackendManager
 
 
 def _fast_cfg(profile: str, margin: float = 0.0) -> BackendConfig:
@@ -121,3 +121,107 @@ async def test_unload_now_clears_loaded(monkeypatch: pytest.MonkeyPatch) -> None
 
     await mgr.unload_now()
     assert mgr.is_loaded is False
+
+
+# ── MultiBackendManager: single-port unload-before-load swap ────────────────
+
+
+def _multi_manager() -> MultiBackendManager:
+    configs = {
+        "Qwen3.8-27B-UD-Q3_K_XL": BackendConfig(
+            profile="Qwen3.8-27B-UD-Q3_K_XL",
+            queue_timeout=0.2, poll_interval=0.01, health_timeout=0.5,
+            vram_margin_gb=0.0,
+        ),
+        "MiniCPM5-2B-Q4_K_M": BackendConfig(
+            profile="MiniCPM5-2B-Q4_K_M",
+            queue_timeout=0.2, poll_interval=0.01, health_timeout=0.5,
+            vram_margin_gb=0.0,
+        ),
+    }
+    return MultiBackendManager(configs, default="Qwen3.8-27B-UD-Q3_K_XL")
+
+
+@pytest.mark.asyncio
+async def test_multi_served_model_ids_and_resolve(monkeypatch: pytest.MonkeyPatch) -> None:
+    mgr = _multi_manager()
+    assert mgr.model_ids == ["Qwen3.8-27B-UD-Q3_K_XL", "MiniCPM5-2B-Q4_K_M"]
+    assert mgr.default_model == "Qwen3.8-27B-UD-Q3_K_XL"
+    # bare id, provider-prefixed id, default-when-empty
+    assert mgr._resolve("Qwen3.8-27B-UD-Q3_K_XL") == "Qwen3.8-27B-UD-Q3_K_XL"
+    assert mgr._resolve("coding-guardrails/MiniCPM5-2B-Q4_K_M") == "MiniCPM5-2B-Q4_K_M"
+    assert mgr._resolve("") == "Qwen3.8-27B-UD-Q3_K_XL"
+    with pytest.raises(BackendUnavailable):
+        mgr._resolve("not-a-model")
+
+
+@pytest.mark.asyncio
+async def test_multi_unload_before_load_swap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requesting a different model unloads the current backend before loading."""
+    mgr = _multi_manager()
+    _patch_vram(monkeypatch, 20.0)  # plenty of VRAM for either model
+    start_calls, stop_calls = _patch_launcher(monkeypatch, is_running=False)
+
+    # Patch health at the class level so every inner BackendManager is healthy.
+    async def fake_health(self, timeout):
+        return True
+    monkeypatch.setattr(BackendManager, "_await_health", fake_health)
+
+    # First request: Qwen3.8 loads.
+    async with mgr.use("Qwen3.8-27B-UD-Q3_K_XL"):
+        assert mgr.current_model == "Qwen3.8-27B-UD-Q3_K_XL"
+        assert mgr.is_loaded is True
+    assert len(start_calls) == 1
+    assert len(stop_calls) == 0
+
+    # Swap to MiniCPM5: the Qwen backend must be unloaded (stop) before the new loads.
+    async with mgr.use("coding-guardrails/MiniCPM5-2B-Q4_K_M"):
+        assert mgr.current_model == "MiniCPM5-2B-Q4_K_M"
+        assert mgr.is_loaded is True
+    assert len(start_calls) == 2  # one fresh start per model
+    assert len(stop_calls) == 1  # exactly one unload (the Qwen backend)
+
+    # Back to Qwen3.8: another swap — stop MiniCPM5, start Qwen again.
+    async with mgr.use("Qwen3.8-27B-UD-Q3_K_XL"):
+        assert mgr.current_model == "Qwen3.8-27B-UD-Q3_K_XL"
+    assert len(start_calls) == 3
+    assert len(stop_calls) == 2
+
+    await mgr.unload_now()
+    assert mgr.is_loaded is False
+
+
+@pytest.mark.asyncio
+async def test_multi_unknown_model_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    mgr = _multi_manager()
+    _patch_vram(monkeypatch, 20.0)
+    _, stop_calls = _patch_launcher(monkeypatch, is_running=False)
+
+    with pytest.raises(BackendUnavailable, match="unknown model"):
+        async with mgr.use("does-not-exist"):
+            pass
+
+    assert mgr.current_model is None
+    assert stop_calls == []  # nothing was loaded, so nothing was unloaded
+
+
+@pytest.mark.asyncio
+async def test_multi_single_model_backward_compat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A one-config MultiBackendManager behaves the same as a single BackendManager."""
+    mgr = MultiBackendManager(
+        {"Qwen3.8-27B-UD-Q3_K_XL": BackendConfig(
+            profile="Qwen3.8-27B-UD-Q3_K_XL",
+            queue_timeout=0.2, poll_interval=0.01, health_timeout=0.5,
+            vram_margin_gb=0.0,
+        )},
+        default="Qwen3.8-27B-UD-Q3_K_XL",
+    )
+    _patch_vram(monkeypatch, 18.5)
+    start_calls, _ = _patch_launcher(monkeypatch, is_running=False)
+    async def fake_health(self, timeout):
+        return True
+    monkeypatch.setattr(BackendManager, "_await_health", fake_health)
+
+    async with mgr.use("whatever-the-agent-sends"):
+        assert mgr.current_model == "Qwen3.8-27B-UD-Q3_K_XL"
+    assert len(start_calls) == 1

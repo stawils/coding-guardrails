@@ -194,6 +194,7 @@ defaults, boot flags, VRAM requirements, and context limits per GGUF.
 | **Qwen3.6-27B** | 17.9 GB | 19.5 GB | **48K** | ~20-30 tok/s | 99.3% / 94% acc | Highest capability when 48K suffices |
 | **Gemma 4 26B A4B QAT** | 14.25 GB | 19.8 GB | 200K | ~40+ tok/s | — | Highest raw capability; prone to thinking loops |
 | **LFM2.5-2.6B** | 5.4 GB | 9 GB | 128K | ~113 tok/s | 92.7% / 71% acc | Bounded tasks only (card caveat confirmed) |
+| **MiniCPM5-2B** | 1.56 GB | ~3.0 GB | **131K** | ~182 tok/s | 100% / 85% acc | Fastest edge tier; replaces LFM2.5 (better tool-select) |
 
 ### Vision (multimodal)
 
@@ -205,8 +206,9 @@ guardrail pipeline — verified end-to-end through the proxy on 2026-08-15
 (image → caption → correct answer). Disable captioning with
 `--no-vision-captioning`; text-only backends degrade to a placeholder.
 
-Full details, boot commands, and per-model caveats:
-[docs/models.md](docs/models.md).
+More than one `--model` turns the proxy into a **single-port multi-model proxy**: one port serves several models and swaps them with **unload-before-load** (frees VRAM/turn over one GPU, then loads the requested model). E.g. `cg server start --manage-backend --model Qwen3.8-27B-UD-Q3_K_XL --model MiniCPM5-2B-Q4_K_M --port 8081`. The proxy routes each request by its `model` id and advertises all served ids from `/v1/models`.
+
+Full details, boot commands, and per-model caveats: [docs/models.md](docs/models.md).
 
 ## Real use — a delegated coding task, end to end
 

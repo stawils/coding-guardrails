@@ -158,7 +158,7 @@ class GuardrailProxyServer:
                     try:
                         payload["backend"] = {
                             "loaded": bool(self._backend_manager.is_loaded),
-                            "model": getattr(getattr(self._backend_manager, "cfg", None), "profile", None),
+                            "model": getattr(self._backend_manager, "current_model", None),
                         }
                     except Exception:  # noqa: BLE001 — health must never 500
                         payload["backend"] = {"loaded": False, "model": None}
@@ -204,7 +204,19 @@ class GuardrailProxyServer:
         return headers
 
     async def _handle_models(self, writer: asyncio.StreamWriter) -> None:
-        """GET /v1/models — returns model info."""
+        """GET /v1/models — returns model info for every served model."""
+        # Multi-model proxy: advertise every served id (backend may be lazy).
+        multi_ids = getattr(self._backend_manager, "model_ids", None) if self._backend_manager else None
+        if multi_ids:
+            data = [
+                {"id": mid, "object": "model", "owned_by": "coding-guardrails"}
+                for mid in multi_ids
+            ]
+            body = json.dumps({"object": "list", "data": data})
+            await self._send_json(writer, 200, body)
+            return
+
+        # Single-model path (unchanged): one id + backend-negotiated meta if up.
         model_info: dict[str, Any] = {
             "id": self._model_name,
             "object": "model",
@@ -292,17 +304,22 @@ class GuardrailProxyServer:
         return item.future.result()
 
     async def _run_handler(self, body: dict[str, Any]) -> Any:
-        # Managed backend: ensure the GPU model is loaded (VRAM-gate + queue) before
-        # inference, then release → idle-unload timer. Acquire may raise
-        # BackendUnavailable (queue-timeout) → surfaced as 503 → fleet L2 fallback.
-        acquired = False
-        if self._backend_manager is not None:
+        # Managed backend: ensure the correct GPU model is loaded (VRAM-gate +
+        # queue; unload-before-load swap for multi-model) before inference, then
+        # release → idle-unload timer. Acquire errors (e.g. BackendUnavailable)
+        # → surfaced → fleet L2 fallback.
+        mgr = self._backend_manager
+        if mgr is not None:
             try:
-                await self._backend_manager.acquire()
-                acquired = True
+                requested = body.get("model") or self._model_name
+                async with mgr.use(requested):
+                    return await self._infer(body)
             except Exception as exc:
                 logger.warning("backend unavailable: %s", exc)
                 return exc
+        return await self._infer(body)
+
+    async def _infer(self, body: dict[str, Any]) -> Any:
         try:
             return await handle_chat_completions(
                 body=body,
@@ -319,9 +336,6 @@ class GuardrailProxyServer:
         except Exception as exc:
             logger.exception("Handler error")
             return exc
-        finally:
-            if acquired:
-                await self._backend_manager.release()
 
     # ── HTTP helpers ──
 

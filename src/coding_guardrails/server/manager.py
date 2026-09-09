@@ -23,6 +23,8 @@ import asyncio
 import logging
 import time
 import urllib.request
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from coding_guardrails.server import launcher
@@ -70,6 +72,24 @@ class BackendManager:
     @property
     def refcount(self) -> int:
         return self._refcount
+
+    @property
+    def current_model(self) -> str | None:
+        """The profile this single-backend manager owns."""
+        return self.cfg.profile
+
+    @asynccontextmanager
+    async def use(self, model_id: str | None = None):
+        """Proxy-facing lifecycle: acquire for one request, release on exit.
+
+        ``model_id`` is accepted for API symmetry with ``MultiBackendManager``
+        but ignored here — a single-backend manager serves exactly one model.
+        """
+        try:
+            await self.acquire()
+            yield
+        finally:
+            await self.release()
 
     async def acquire(self) -> None:
         """Ensure the backend is loaded + healthy before a request.
@@ -244,3 +264,108 @@ class BackendManager:
             except Exception:  # noqa: BLE001 — not healthy yet
                 await asyncio.sleep(1.0)
         return False
+
+
+class MultiBackendManager:
+    """Route requests to several model backends behind one always-on proxy.
+
+    One llama-server backend runs at a time (a single backend port). Selecting a
+    model that isn't the currently-loaded one **unloads the current backend
+    first** (freeing VRAM), then reloads the requested one (VRAM-gated + queued)
+    — the single-provider "unload-before-load" swap.
+
+    The entire request lifecycle (configure → acquire → infer → release) is
+    serialized on an internal lock, so a model is never swapped out while a
+    request is mid-flight on it and concurrent requests queue cleanly. This
+    matches the single-GPU reality and the proxy's ``--serialize`` design.
+    """
+
+    def __init__(
+        self,
+        configs: Mapping[str, BackendConfig],
+        *,
+        default: str | None = None,
+    ) -> None:
+        if not configs:
+            raise ValueError("MultiBackendManager needs at least one backend config")
+        self._configs = dict(configs)
+        self._default = default if default in self._configs else next(iter(self._configs))
+        self._active: BackendManager | None = None
+        self._active_model: str | None = None
+        self._lock = asyncio.Lock()
+
+    # ── introspection for /v1/models + /health ──
+
+    @property
+    def model_ids(self) -> list[str]:
+        """All model ids this manager can serve (in configured order)."""
+        return list(self._configs)
+
+    @property
+    def default_model(self) -> str:
+        return self._default
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._active is not None and self._active.is_loaded
+
+    @property
+    def current_model(self) -> str | None:
+        return self._active_model
+
+    # ── routing ──
+
+    def _resolve(self, model_id: str | None) -> str:
+        """Map a requested model name (optionally provider-prefixed) to a served id."""
+        if not model_id:
+            return self._default
+        if model_id in self._configs:
+            return model_id
+        # "provider/name" → name  (pi/OpenAI clients send the full provider id)
+        if "/" in model_id:
+            name = model_id.rsplit("/", 1)[1]
+            if name in self._configs:
+                return name
+        # Robust trailing match for agents that append family tags.
+        for served in self._configs:
+            if model_id.endswith(served) or served.endswith(model_id):
+                return served
+        if len(self._configs) == 1:
+            # Single-model proxy: preserve the old single-BackendManager behavior
+            # of serving its model no matter what id the agent sends.
+            return self._default
+        raise BackendUnavailable(
+            f"unknown model: {model_id!r} (served: {', '.join(self._configs)})"
+        )
+
+    @asynccontextmanager
+    async def use(self, model_id: str | None = None):
+        """Serialize one request and route it to the correct backend model."""
+        target = self._resolve(model_id)
+        cfg = self._configs[target]
+        async with self._lock:
+            if self._active is None:
+                self._active = BackendManager(cfg)
+                self._active_model = target
+            elif self._active_model != target:
+                # Unload the current model to free VRAM, then load the requested one.
+                logger.info(
+                    "swap: unloading %s → loading %s",
+                    self._active_model, target,
+                )
+                await self._active.unload_now()
+                self._active = BackendManager(cfg)
+                self._active_model = target
+            await self._active.acquire()
+            try:
+                yield
+            finally:
+                await self._active.release()
+
+    async def unload_now(self) -> None:
+        """Unload the active backend (server shutdown)."""
+        async with self._lock:
+            if self._active is not None:
+                await self._active.unload_now()
+                self._active = None
+                self._active_model = None
