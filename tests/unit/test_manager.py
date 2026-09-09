@@ -53,9 +53,9 @@ def _patch_health(monkeypatch: pytest.MonkeyPatch, mgr: BackendManager, ok: bool
 
 
 def test_vram_needed_math() -> None:
-    # Profile gate: Qwen3.8-27B-UD-Q3_K_XL declares vram_required_gb=18.2.
+    # Profile gate: Qwen3.8-27B-UD-Q3_K_XL declares vram_required_gb=18.0 @120K ctx.
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL", margin=0.0)
-    assert mgr._vram_needed() == pytest.approx(18.2, rel=0.01)
+    assert mgr._vram_needed() == pytest.approx(18.0, rel=0.01)
 
     # Unknown profile falls back to the 18.0 GB baseline + margin.
     mgr2 = _make_manager("does-not-exist", margin=2.0)
@@ -65,7 +65,7 @@ def test_vram_needed_math() -> None:
 @pytest.mark.asyncio
 async def test_gate_ok_loads_and_releases(monkeypatch: pytest.MonkeyPatch) -> None:
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL")
-    _patch_vram(monkeypatch, 18.5)  # 18.5 >= 18.2 gate
+    _patch_vram(monkeypatch, 18.5)  # 18.5 >= 18.0 gate
     start_calls, _ = _patch_launcher(monkeypatch, is_running=False)
     _patch_health(monkeypatch, mgr, True)
 

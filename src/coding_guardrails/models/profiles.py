@@ -91,8 +91,8 @@ PROFILES: dict[str, ModelProfile] = {
         family="Qwen3.8",
         quant="UD-Q3_K_XL",
         file_size_gb=13.44,
-        vram_required_gb=18.2,  # gate floor: incremental footprint ≈ 18.1 GB measured 2026-08-31 (18,897 MiB free → 796 MiB free on load @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. 18.2 = footprint + 0.1, below the ~18.4 desktop worst-case baseline (rustdesk+venv), above the OOM floor. Failure mode below it is a clean 503 → fleet L2 fallback (queue-timeout), not a crash.
-        context_tokens=131072,
+        vram_required_gb=18.0,  # gate floor @120K ctx (was 18.2 @128K): incremental footprint ≈ 18.1 GB measured 2026-08-31 (18,897 MiB free → 796 MiB free on load @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. 18.2 = footprint + 0.1, below the ~18.4 desktop worst-case baseline (rustdesk+venv), above the OOM floor. Failure mode below it is a clean 503 → fleet L2 fallback (queue-timeout), not a crash.
+        context_tokens=120000,
         context_budget=12000,  # tool-call cliff ~20-27K (prose fallback); solid <~11K, flaky 13-19K (measured 2026-08-31). TieredCompact at 75% -> ~9-11K prompts.
         architecture="dense",
         active_params_b=27.0,
