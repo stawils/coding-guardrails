@@ -72,6 +72,8 @@ decoding, context size) per model — no flag archaeology.
 
 | Flag | Default | What it does |
 |------|---------|--------------|
+| `--auto-no-thinking` | on | Plain (no-tool) requests answer directly with thinking off. A request that explicitly opts in wins: `chat_template_kwargs.enable_thinking=true` or a `reasoning_effort` level. `--no-auto-no-thinking` leaves the template default (thinking on for reasoning models). Tool calls always keep thinking on. |
+| `--thinking-budget-tokens` | 4096 | Token cap on the reasoning block for plain-path thinking (0 disables). Prevents reasoning from eating `max_tokens` and returning an empty answer; the empty-after-thinking case still retries once with thinking off. |
 | `--reasoning-replay` | `keep-last` | How much model thinking reaches the agent: `keep-last` (thinking in the `reasoning_content` field), `full` (thinking as message content), `none` (observability only). forge ≥0.7.5 defaults to `none` — set this or thinking silently vanishes from responses. |
 | `--context-budget` | 12000 | Layer-1 compaction budget (tokens). Measured 2026-08-31: tool-calling collapses to prose at ~20–27K prompt tokens (Qwen3.8-27B through the proxy); `TieredCompact` fires at ~75% so sessions stay under the cliff. Raise only for text-heavy single-shot reads. Per-model override: `ModelProfile.context_budget` (Qwen3.8 measured → 12000). |
 | `--convergence-nudge-after` | 0 (off) | Experimental finalize-now reminder after N tool-call turns. Measured NOT to fix open-ended task drift — bounded task templates do. |
