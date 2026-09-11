@@ -7,12 +7,21 @@ parent's send paths (no Forge source re-implementation):
    guard never fires (pi project-instructions arrive as trailing system msgs).
 2. Acceptance-finalization prefill (F9 fix) — append a JSON prefill as a
    trailing assistant message so pi acceptance reports come back structured.
-3. Thinking retention — captured reasoning (ToolCall.reasoning) is surfaced as
-   ``client.last_thinking`` for Layer 1's logging + retry-nudge injection.
+3. Thinking retention — captured reasoning (ToolCall.reasoning AND text
+   responses' ``reasoning_content``) is surfaced as ``client.last_thinking``
+   for Layer 1's logging + retry-nudge injection and the handler's plain-path
+   reasoning replay.
 
 Thin wrappers mean Forge's own improvements (malformed-500 tool-call rescue,
 credential forwarding, envelope guards, argument decoding) are inherited on
 upgrade instead of being shadowed by a copy of stale internals.
+
+The text-path capture works around a Forge parse gap: ``LlamafileClient``
+only reads ``reasoning_content`` when the response contains tool_calls; for
+plain text responses the reasoning is dropped before ``send`` returns. We
+observe the raw non-streaming envelope via a small transparent HTTP wrapper
+(``_ReasoningCaptureHttp``) and recover it in ``send`` — no Forge parsing is
+duplicated, so upstream parser fixes keep landing through the parent class.
 """
 
 from __future__ import annotations
@@ -22,10 +31,53 @@ import logging
 from typing import Any
 
 from forge.clients.llamafile import LlamafileClient
-from forge.core.workflow import LLMResponse, ToolSpec
+from forge.core.workflow import LLMResponse, TextResponse, ToolSpec
 from forge.errors import BackendError
 
 from coding_guardrails.proxy.handler import _normalize_message_roles
+
+
+class _ReasoningCaptureHttp:
+    """Transparent httpx wrapper that records the last non-streaming chat body.
+
+    Forge's parse paths expose ``reasoning_content`` only on tool-call
+    responses. By memoizing the raw envelope here we can recover the reasoning
+    for plain text responses without re-implementing Forge's parser. All other
+    HTTP behavior (get/stream/aclose/attr passthrough) is forwarded verbatim,
+    so existing users of ``client._http`` (vision captioning, props queries)
+    are unaffected.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.last_response_json: dict[str, Any] | None = None
+
+    async def post(self, url: str, **kwargs: Any) -> Any:
+        resp = await self._inner.post(url, **kwargs)
+        body = kwargs.get("json") or {}
+        # Only record non-streaming chat completions: streaming responses are
+        # consumed lazily via aiter_lines and must not be pre-read.
+        if "chat/completions" in str(url) and not body.get("stream"):
+            try:
+                await resp.aread()
+                data = resp.json()
+                if isinstance(data, dict) and data.get("choices"):
+                    self.last_response_json = data
+            except Exception:  # noqa: BLE001 — observability only, never break the call
+                pass
+        return resp
+
+    async def get(self, url: str, **kwargs: Any) -> Any:
+        return await self._inner.get(url, **kwargs)
+
+    def stream(self, *args: Any, **kwargs: Any) -> Any:
+        return self._inner.stream(*args, **kwargs)
+
+    async def aclose(self) -> None:
+        return await self._inner.aclose()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
 
 def _coerce_wire_tool_args(openai_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -81,6 +133,9 @@ class SafeLlamafileClient(LlamafileClient):
         # Thinking tokens from the most recent response.
         # Populated regardless of whether the response was tool calls or text.
         self.last_thinking: str = ""
+        # Observe the raw non-streaming envelope so text responses can keep
+        # their reasoning_content (Forge drops it on the text parse path).
+        self._http = _ReasoningCaptureHttp(self._http)
 
     # ── Acceptance finalization prefill (F9 fix) ───────────────────────────────
     # When pi-subagents runs the acceptance-finalization turn, the model often
@@ -173,18 +228,35 @@ class SafeLlamafileClient(LlamafileClient):
         )
         return result
 
+    # llama.cpp /v1/chat/completions thinking-control fields forwarded verbatim
+    # when a request explicitly sets them (see tools/server/README.md):
+    #   reasoning_effort      — OpenAI-style level (none/low/medium/high/...)
+    #                           made available to the jinja template
+    #   thinking_budget_tokens — llama.cpp token cap on the thinking block
+    _THINKING_SAMPLING_FIELDS = ("reasoning_effort", "thinking_budget_tokens")
+
     def _apply_sampling(
         self, body: dict[str, Any], sampling: dict[str, Any] | None = None,
     ) -> None:
         super()._apply_sampling(body, sampling)
 
+        # max_tokens / n_predict: first present wins; else the instance default.
+        applied = False
         for field in self._EXTRA_SAMPLING_FIELDS:
             override = (sampling or {}).get(field)
             if override is not None:
                 body[field] = override
-                return
+                applied = True
+                break
+        if not applied:
+            body.setdefault("max_tokens", self._default_max_tokens)
 
-        body.setdefault("max_tokens", self._default_max_tokens)
+        # Thinking controls — all present fields apply (no early return, so a
+        # request can combine e.g. reasoning_effort + thinking_budget_tokens).
+        for field in self._THINKING_SAMPLING_FIELDS:
+            override = (sampling or {}).get(field)
+            if override is not None:
+                body[field] = override
 
     # ── Send overrides that preserve thinking ──────────────────────────
 
@@ -206,9 +278,18 @@ class SafeLlamafileClient(LlamafileClient):
             inbound_anthropic_body=inbound_anthropic_body,
             raw_openai_tools=raw_openai_tools, extra_headers=extra_headers,
         )
-        # Retain thinking for Layer 1 (logging + retry-nudge injection).
+        # Retain thinking for Layer 1 (logging + retry-nudge injection) and the
+        # plain-path reasoning replay. Tool calls carry it on ToolCall.reasoning;
+        # text responses recover it from the raw envelope (Forge drops it).
         if isinstance(result, list) and result and getattr(result[0], "reasoning", None):
             self.last_thinking = result[0].reasoning
+        elif isinstance(result, TextResponse):
+            captured = getattr(self._http, "last_response_json", None) or {}
+            try:
+                message = (captured.get("choices") or [{}])[0].get("message") or {}
+                self.last_thinking = message.get("reasoning_content") or ""
+            except Exception:  # noqa: BLE001 — capture is best-effort
+                self.last_thinking = ""
         return result
 
     async def _send_native(

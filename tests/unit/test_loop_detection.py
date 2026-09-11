@@ -224,7 +224,6 @@ class TestRecordEdgeCases:
 
     def test_tool_aliasing_blocks(self, rule):
         """Repeated calls via different tool aliases should escalate to block."""
-        call = ToolCall(tool="bash", args={"command": "echo hi"})
         aliases = ["bash", "shell", "exec", "run", "command"]
         for alias in aliases:
             c = ToolCall(tool=alias, args={"command": "echo hi"})

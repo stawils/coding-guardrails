@@ -1,6 +1,5 @@
 """Tests for the middleware (rule composition)."""
 
-import pytest
 from coding_guardrails.rules.base import Action, ToolCall
 from coding_guardrails.middleware import CodingGuardrails
 
@@ -149,7 +148,8 @@ class TestCrossRuleInteractions:
         assert not result3.has_nudges  # No nudges after prereq satisfied
 
 
-def test_read_edit_workflow():
+def test_defaults_wire_all_rules():
+    """The defaults profile wires every rule type (prereq sanity check)."""
     gw = CodingGuardrails.defaults()
     assert gw.prerequisites is not None
     assert gw.path_safety is not None

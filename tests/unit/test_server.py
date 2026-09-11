@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import os
-import sys
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from coding_guardrails.server import paths, version, sources, build, launcher, download
+from coding_guardrails.server import paths, version, sources, build, launcher
 from coding_guardrails.models import registry
 
 

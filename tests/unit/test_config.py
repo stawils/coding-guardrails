@@ -1,6 +1,5 @@
 """Tests for guardrail config loading."""
 
-import pytest
 
 from coding_guardrails.middleware import CodingGuardrails
 

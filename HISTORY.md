@@ -1,5 +1,20 @@
 # Session History
 
+## 2026-09-11 — Thinking mode allowed safely + reliably on the plain path
+- Plain (no-tool) requests previously dropped captured thinking entirely (Forge parses
+  reasoning_content only for tool-call responses) and could return EMPTY content when
+  reasoning ate max_tokens (the cliff auto-no-thinking existed to avoid).
+- Fix: `_ReasoningCaptureHttp` wrapper recovers reasoning_content for text responses
+  into `client.last_thinking`; plain path relays it per `reasoning_replay`
+  (keep-last → reasoning_content field, full → content, none → drop).
+- Thinking levels/control follow current-day llama.cpp conventions: per-request
+  `reasoning_effort` (OpenAI-style) + `thinking_budget_tokens` forwarded verbatim;
+  new `--thinking-budget-tokens` (default 4096) bounds plain-path thinking; empty-after-
+  thinking retries once with enable_thinking=false. auto-no-thinking default unchanged.
+- Verified live on Qwen3.8-27B-UD + MiniCPM5-2B (content + reasoning_content in both
+  plain and stream). 711 unit tests pass; ruff clean (22 legacy lint errors also fixed).
+- Report: `plans/2026-09-11_thinking-mode.md`.
+
 ## 2026-08-08 — v0.16.2 released: honest presentation + measured results
 - Full release protocol executed: v0.16.2 (13 rules, corrected eval tables, respond() bug
   story, limitations) pushed + tagged + CI-published to PyPI + GitHub Release created.

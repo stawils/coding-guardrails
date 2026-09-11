@@ -1,6 +1,6 @@
 """Property-based fuzz tests for guardrail rules."""
 import string
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, settings
 from hypothesis.strategies import text as st_text
 from coding_guardrails.rules.base import Action, ToolCall
 from coding_guardrails.rules.commands import CommandSafetyRule

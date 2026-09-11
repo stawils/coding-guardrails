@@ -1,6 +1,5 @@
 """Unit tests for path computation functions in coding_guardrails.server.paths."""
 
-import os
 from pathlib import Path
 
 import pytest

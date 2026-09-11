@@ -5,7 +5,6 @@ Verifies the proxy-level integration (not just the rules in isolation):
 - Tainted tool results get the spotlighting warning inserted before Layer 1.
 """
 
-import pytest
 
 from forge.context.manager import ContextManager
 from forge.context.strategies import TieredCompact

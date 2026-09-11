@@ -57,6 +57,7 @@ class GuardrailProxyServer:
         vision_captioning: bool = True,
         convergence_nudge_after: int = 0,
         reasoning_replay: str = "keep-last",
+        thinking_budget_tokens: int = 4096,
     ) -> None:
         self._client = client
         self._context_manager = context_manager
@@ -72,6 +73,7 @@ class GuardrailProxyServer:
         self._vision_captioning = vision_captioning
         self._convergence_nudge_after = convergence_nudge_after
         self._reasoning_replay = reasoning_replay
+        self._thinking_budget_tokens = thinking_budget_tokens
         self._server: asyncio.Server | None = None
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
@@ -332,6 +334,7 @@ class GuardrailProxyServer:
                 vision_captioning=self._vision_captioning,
                 convergence_nudge_after=self._convergence_nudge_after,
                 reasoning_replay=self._reasoning_replay,
+                thinking_budget_tokens=self._thinking_budget_tokens,
             )
         except Exception as exc:
             logger.exception("Handler error")

@@ -45,13 +45,15 @@ def main() -> None:
 @click.option("--vram-margin", default=2.0, type=float,
               help="Safety margin (GB) of free VRAM required above the model's footprint before loading. Lower for tight GPUs with a known baseline; the model must still fit. Default 2.")
 @click.option("--auto-no-thinking/--no-auto-no-thinking", default=True,
-              help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. Tool requests keep thinking on. Default on.")
+              help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. A request that explicitly opts in overrides this: chat_template_kwargs.enable_thinking=true or a reasoning_effort level. --no-auto-no-thinking leaves the model's template default (thinking on for reasoning models) and carries captured reasoning back per --reasoning-replay. Tool requests keep thinking on. Default on.")
 @click.option("--vision-captioning/--no-vision-captioning", default=True,
               help="Caption inbound images via the (multimodal) backend and substitute text blocks — the guardrails pipeline is text-only. Requires the backend to run with an mmproj. Default on.")
 @click.option("--convergence-nudge-after", default=0, type=int,
               help="Inject a conditional finalize-now reminder into the enforcement once the conversation exceeds this many assistant tool-call turns. 0 disables (default). Experimental — measured NOT to fix open-ended task drift (2026-08-31); bounded task templates do. Default 0.")
 @click.option("--reasoning-replay", default="keep-last", type=click.Choice(["full", "keep-last", "none"]),
-              help="How much captured model thinking to deliver to the agent in responses: 'full' (thinking as message content), 'keep-last' (thinking in the reasoning_content field, forge's recommended channel), or 'none' (drop — observability only). Default keep-last.")
+              help="How much captured model thinking to deliver to the agent in responses: 'full' (thinking as message content), 'keep-last' (thinking in the reasoning_content field, forge's recommended channel), or 'none' (drop — observability only). Applies to both tool-call and plain-text responses. Default keep-last.")
+@click.option("--thinking-budget-tokens", default=4096, type=int,
+              help="Token cap on the reasoning block for plain (no-tool) requests when thinking is enabled and the request did not set its own reasoning_effort/thinking_budget_tokens. Bounding prevents thinking from eating max_tokens and returning an empty answer (the empty-content cliff); 0 disables the cap. The empty-after-thinking case still retries once with thinking off. Default 4096.")
 @click.option("--context-budget", default=12000, type=int,
               help="Layer-1 compaction budget in tokens (TieredCompact fires at ~75% of it). Measured 2026-08-31: Qwen3.8-27B tool-calling is 100%% reliable at <=~19K real tokens through the proxy and collapses to prose at ~20-27K — the 128K profile budget never compacted before the cliff. Default 12000 (TieredCompact -> ~11K prompts, the measured solid zone; 13-19K compacted prompts ran ~2/3 flaky regardless of temperature, 2026-08-31). Raise only for text-heavy single-shot work.")
 def serve(
@@ -75,6 +77,7 @@ def serve(
     vision_captioning: bool,
     convergence_nudge_after: int,
     reasoning_replay: str,
+    thinking_budget_tokens: int,
     context_budget: int,
 ) -> None:
     """Start the coding-guardrails proxy server."""
@@ -120,6 +123,7 @@ def serve(
             vision_captioning=vision_captioning,
             convergence_nudge_after=convergence_nudge_after,
             reasoning_replay=reasoning_replay,
+            thinking_budget_tokens=thinking_budget_tokens,
             context_budget=context_budget,
         ))
     except KeyboardInterrupt:
@@ -145,6 +149,7 @@ async def _run_proxy(
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",
+    thinking_budget_tokens: int = 4096,
     context_budget: int = 12000,
 ) -> None:
     """Async proxy startup and run loop."""
@@ -252,6 +257,7 @@ async def _run_proxy(
         vision_captioning=vision_captioning,
         convergence_nudge_after=convergence_nudge_after,
         reasoning_replay=reasoning_replay,
+        thinking_budget_tokens=thinking_budget_tokens,
     )
     await server.start()
     click.echo(f"\n  Proxy ready at http://{host}:{port}")
@@ -504,11 +510,11 @@ def _status() -> None:
 
 
 # Import and register the eval command
-from coding_guardrails.eval import eval_cmd
+from coding_guardrails.eval import eval_cmd  # noqa: E402 — deferred: heavy import
 main.add_command(eval_cmd, "eval")
 
 # Register the server command group (cg-owned llama.cpp lifecycle)
-from coding_guardrails.server.cli import server_cmd
+from coding_guardrails.server.cli import server_cmd  # noqa: E402 — deferred: heavy import
 main.add_command(server_cmd)
 
 

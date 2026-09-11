@@ -17,7 +17,6 @@ import json
 import httpx
 import pytest
 
-from forge.core.workflow import TextResponse, ToolCall
 from forge.errors import BackendError
 
 from coding_guardrails.proxy.client import SafeLlamafileClient
@@ -72,7 +71,6 @@ class TestRoleNormalization:
 class TestWireToolArgCoercion:
     async def test_string_args_coerced_to_objects_on_the_wire(self) -> None:
         captured: list[dict] = []
-        handler = _capture(captured)
         # Re-capture the tool_calls too
         def _h(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)

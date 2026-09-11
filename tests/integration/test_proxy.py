@@ -9,7 +9,6 @@ Skip in CI: pytest tests/unit/ -v (default)
 
 import json
 import subprocess
-import time
 
 import pytest
 
@@ -146,7 +145,7 @@ class TestGuardrails:
         else:
             # Model may have refused directly (Qwen safety training)
             msg = resp["choices"][0]["message"]
-            content = msg.get("content", "")
+            _content = msg.get("content", "")
             if not msg.get("tool_calls"):
                 # Model refused or responded with text — acceptable
                 pass
@@ -224,7 +223,7 @@ class TestErrorHandling:
         else:
             # Model may have refused directly
             msg = resp["choices"][0]["message"]
-            content = msg.get("content", "")
+            _content = msg.get("content", "")
             # If blocked, model should respond with text explaining why
             # Either direct refusal or guardrail text response
 

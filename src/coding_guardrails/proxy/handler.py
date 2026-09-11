@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 from forge.clients.base import LLMClient
@@ -72,6 +73,9 @@ _SAMPLING_FIELDS = (
     "temperature", "top_p", "top_k", "min_p",
     "repeat_penalty", "presence_penalty", "seed",
     "chat_template_kwargs",
+    # Thinking control (llama.cpp /v1/chat/completions): OpenAI-style effort
+    # level passed to the jinja template + reasoning block token budget.
+    "reasoning_effort", "thinking_budget_tokens",
 )
 
 
@@ -318,6 +322,56 @@ def _terminal_retry_nudge(raw_response: str) -> str:
     )
 
 
+def _text_response_to_openai_relayed(
+    text: str,
+    model: str = "coding-guardrails",
+    reasoning: str = "",
+    reasoning_replay: str = "keep-last",
+) -> dict[str, Any]:
+    """OpenAI-compatible response for a plain text answer, optionally carrying
+    captured reasoning per the replay policy (mirrors Forge's tool-call
+    converters): 'keep-last' → reasoning_content field; 'full' → merged into
+    content; 'none' → plain text only."""
+    response = text_response_to_openai(text, model=model)
+    if not reasoning:
+        return response
+    message = response["choices"][0]["message"]
+    if reasoning_replay == "keep-last":
+        message["reasoning_content"] = reasoning
+    elif reasoning_replay == "full":
+        message["content"] = (reasoning + "\n\n" + text) if text else reasoning
+    return response
+
+
+def _text_to_sse_events_relayed(
+    text: str,
+    model: str = "coding-guardrails",
+    reasoning: str = "",
+    reasoning_replay: str = "keep-last",
+) -> list[dict[str, Any]]:
+    """SSE chunks for a plain text answer with an optional leading reasoning
+    delta (DeepSeek-style reasoning_content), matching `_text_response_to_openai_relayed`."""
+    if not reasoning:
+        return text_to_sse_events(text, model=model)
+    cmpl_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    events: list[dict[str, Any]] = []
+    delta: dict[str, Any] = {"role": "assistant"}
+    if reasoning_replay == "full":
+        delta["content"] = reasoning
+        events.append({
+            "id": cmpl_id, "object": "chat.completion.chunk", "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+        })
+    elif reasoning_replay == "keep-last":
+        delta["reasoning_content"] = reasoning
+        events.append({
+            "id": cmpl_id, "object": "chat.completion.chunk", "model": model,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+        })
+    events.extend(text_to_sse_events(text, model=model))
+    return events
+
+
 async def handle_chat_completions(
     body: dict[str, Any],
     client: LLMClient,
@@ -329,6 +383,7 @@ async def handle_chat_completions(
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",
+    thinking_budget_tokens: int = 4096,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """Handle /v1/chat/completions with Forge Layer 1 + our Layer 2.
 
@@ -472,25 +527,88 @@ async def handle_chat_completions(
 
     tool_names = [s.name for s in tool_specs]
 
-    # No tools → plain chat completion (generation). Auto-disable thinking so
-    # Qwen3.5 emits a clean direct answer instead of reasoning_content that eats
-    # the token budget. Overridable per-request via chat_template_kwargs.enable_thinking.
+    # No tools → plain chat completion (generation).
+    #
+    # Thinking policy:
+    #  - auto-no-thinking (default) disables thinking for clean direct answers;
+    #    a request that explicitly opts in wins (enable_thinking via
+    #    chat_template_kwargs, or a top-level reasoning_effort).
+    #  - When thinking runs we bound the reasoning block (thinking_budget_tokens)
+    #    so it cannot eat max_tokens and leave an empty answer.
+    #  - If the model still returns reasoning without content (budget cliff),
+    #    retry once with thinking off so the client always gets a real answer.
+    #  - Captured reasoning is delivered per reasoning_replay (default keep-last
+    #    → reasoning_content field, matching the tool-call path).
     if not tool_specs:
-        if auto_no_thinking:
-            if sampling is None:
-                sampling = {}
-            sampling.setdefault("chat_template_kwargs", {}).setdefault("enable_thinking", False)
-        logger.info("Plain text (no tools)%s", " [auto enable_thinking=false]" if auto_no_thinking else "")
+        if sampling is None:
+            sampling = {}
+        request_ckw = dict(sampling.get("chat_template_kwargs") or {})
+        effort = sampling.get("reasoning_effort")
+        if effort == "none":
+            want_thinking = False
+        elif effort is not None:
+            want_thinking = True
+        elif "enable_thinking" in request_ckw:
+            want_thinking = bool(request_ckw["enable_thinking"])
+        else:
+            # No request knob: auto-no-thinking decides. Off → leave the template
+            # default alone (thinking stays on for reasoning models); on → force
+            # a clean direct answer.
+            want_thinking = not auto_no_thinking
+            if auto_no_thinking:
+                request_ckw["enable_thinking"] = False
+        if request_ckw:
+            sampling.setdefault("chat_template_kwargs", {}).update(request_ckw)
+        if (
+            want_thinking
+            and effort is None
+            and sampling.get("thinking_budget_tokens") is None
+            and thinking_budget_tokens
+        ):
+            sampling["thinking_budget_tokens"] = thinking_budget_tokens
+
+        logger.info(
+            "Plain text (no tools) [thinking=%s]%s",
+            "on" if want_thinking else "off",
+            f" [budget={sampling['thinking_budget_tokens']}]"
+            if sampling.get("thinking_budget_tokens") else "",
+        )
         t0 = time.monotonic()
         api_format = getattr(client, "api_format", "ollama")
         api_messages = fold_and_serialize(messages, api_format)
         response = await client.send(api_messages, tools=None, sampling=sampling)
         elapsed = time.monotonic() - t0
         text = response.content if isinstance(response, TextResponse) else ""
-        logger.info("Text response (%s, %d chars)", _fmt_elapsed(elapsed), len(text))
+        reasoning = getattr(client, "last_thinking", "") or ""
+
+        # Reliability fallback: thinking consumed the whole output budget
+        # (reasoning present, answer empty). Retry ONCE with thinking off so
+        # the agent still gets a usable answer. Reasoning from the failed
+        # attempt is logged and dropped from the wire (it would mislabel a
+        # different generation).
+        if want_thinking and not text and reasoning:
+            logger.warning(
+                "Plain response empty after %d thinking chars — retrying once with enable_thinking=false",
+                len(reasoning),
+            )
+            retry = dict(sampling)
+            retry["chat_template_kwargs"] = dict(retry.get("chat_template_kwargs") or {})
+            retry["chat_template_kwargs"]["enable_thinking"] = False
+            retry.pop("reasoning_effort", None)
+            retry.pop("thinking_budget_tokens", None)
+            t0 = time.monotonic()
+            response = await client.send(api_messages, tools=None, sampling=retry)
+            elapsed = time.monotonic() - t0
+            text2 = response.content if isinstance(response, TextResponse) else ""
+            if text2:
+                text = text2
+                reasoning = ""
+            logger.info("Text response (retry, %s, %d chars)", _fmt_elapsed(elapsed), len(text2))
+        else:
+            logger.info("Text response (%s, %d chars)", _fmt_elapsed(elapsed), len(text))
         if is_stream:
-            return text_to_sse_events(text, model=model_name)
-        return text_response_to_openai(text, model=model_name)
+            return _text_to_sse_events_relayed(text, model=model_name, reasoning=reasoning, reasoning_replay=reasoning_replay)
+        return _text_response_to_openai_relayed(text, model=model_name, reasoning=reasoning, reasoning_replay=reasoning_replay)
 
     # ── Layer 1: Forge (rescue, validate, retry) ──
     logger.info(_banner("LAYER 1 - Forge"))
