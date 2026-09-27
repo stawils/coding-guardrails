@@ -29,13 +29,43 @@ from coding_guardrails.rules.dup_write import DuplicateWriteRule
 from coding_guardrails.rules.lint import LinterSpec, LintRule, default_linters, workspace_from_env
 from coding_guardrails.rules.sensitive_files import SensitiveFileRule
 from coding_guardrails.rules.sequencing import SequenceRule
-from coding_guardrails.rules.session_budget import SessionBudgetRule
+from coding_guardrails.rules.session_budget import (
+    DEFAULT_MAX_COMMANDS,
+    DEFAULT_MAX_FILE_OPS,
+    DEFAULT_MAX_READS,
+    DEFAULT_WARN_AT,
+    SessionBudgetRule,
+)
 from coding_guardrails.rules.thoroughness import ThoroughnessRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
 from coding_guardrails.rules.canary import CanaryRule, _new_canary
 from coding_guardrails.rules.injection import InputScanRule
 
 logger = logging.getLogger("coding_guardrails.layer2")
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an int from the environment, falling back on unset/invalid."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Ignoring non-integer %s=%r (using %d)", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a float from the environment, falling back on unset/invalid."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Ignoring non-float %s=%r (using %s)", name, raw, default)
+        return default
 
 
 def _short(text: str, width: int = 60) -> str:
@@ -197,10 +227,22 @@ class CodingGuardrails:
         budget_cfg = config.get("session_budget", {})
         if budget_cfg.get("enabled", True):
             rules["session_budget"] = SessionBudgetRule(
-                max_file_ops=budget_cfg.get("max_file_ops", 100),
-                max_commands=budget_cfg.get("max_commands", 200),
-                max_reads=budget_cfg.get("max_reads", 0),
-                warn_at=budget_cfg.get("warn_at", 0.8),
+                max_file_ops=int(budget_cfg.get(
+                    "max_file_ops",
+                    _env_int("CG_MAX_FILE_OPS", DEFAULT_MAX_FILE_OPS),
+                )),
+                max_commands=int(budget_cfg.get(
+                    "max_commands",
+                    _env_int("CG_MAX_COMMANDS", DEFAULT_MAX_COMMANDS),
+                )),
+                max_reads=int(budget_cfg.get(
+                    "max_reads",
+                    _env_int("CG_MAX_READS", DEFAULT_MAX_READS),
+                )),
+                warn_at=float(budget_cfg.get(
+                    "warn_at",
+                    _env_float("CG_WARN_AT", DEFAULT_WARN_AT),
+                )),
             )
 
         # Thoroughness
@@ -399,6 +441,27 @@ class CodingGuardrails:
         """
         for rule in self._active_rules():
             rule.record(calls)
+
+    def reset_conversation_state(self) -> None:
+        """Reset per-conversation state on every stateful rule.
+
+        Called when a new conversation starts. Every rule that exposes a
+        ``reset()`` is reset — session_budget, loop_detection, thoroughness,
+        prerequisites, dup_write, and sequencing. Stateless rules and the
+        canary tripwire (deliberately process-scoped) are untouched.
+
+        This is generic on purpose: previously the handler reset only
+        loop_detection and thoroughness, so the session budget accumulated
+        for the whole proxy lifetime and stale dup_write/read state leaked
+        into fresh conversations.
+        """
+        for rule in self._active_rules():
+            reset = getattr(rule, "reset", None)
+            if callable(reset):
+                reset()
+            # Rules mutate state in check() but expose no reset(); nothing we
+            # can do generically here without a reset contract on the Rule
+            # protocol. All currently-stateful rules implement reset().
 
     def check_tool_result(self, tool: str, result_text: str) -> RuleResult | None:
         """Check a tool result for empty/error patterns.

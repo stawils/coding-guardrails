@@ -88,3 +88,12 @@ class SequenceRule:
             if self._pending and _tool_matches(call.tool, self.suggest_prefixes):
                 self._pending = False
                 self._calls_since_nudge = 0
+
+    def reset(self) -> None:
+        """Clear per-conversation sequencing state.
+
+        Without this, a pending test nudge and its cooldown counter leaked
+        into the next conversation.
+        """
+        self._calls_since_nudge = 0
+        self._pending = False

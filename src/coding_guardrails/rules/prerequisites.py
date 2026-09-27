@@ -141,3 +141,14 @@ class PrerequisiteRule:
         """Mark a directory as having been read (for testing)."""
         normalized = os.path.normpath(os.path.expanduser(path))
         self._read_dirs.add(normalized.rstrip("/"))
+
+    def reset(self) -> None:
+        """Clear per-conversation read state and violation counter.
+
+        Without this, reads from a previous conversation satisfied the
+        read-before-edit requirement in a new one, and the violation counter
+        carried over so a well-behaved conversation could still be blocked.
+        """
+        self._read_paths.clear()
+        self._read_dirs.clear()
+        self._violation_count = 0

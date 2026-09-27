@@ -148,3 +148,33 @@ class TestResetPreservesThresholds:
             rule2.record([call])
         result = rule2.check(call)
         assert result.action == Action.NUDGE
+
+
+class TestConversationResetCoversSessionBudget:
+
+    def test_session_budget_reset_on_new_conversation(self):
+        """The session budget must reset per conversation, not per process.
+
+        Regression: the proxy reset loop_detection and thoroughness only, so
+        after ~100 cumulative edits every later conversation was hard-blocked
+        with "Budget exhausted" — the model appeared to refuse to work.
+        """
+        from coding_guardrails.middleware import CodingGuardrails
+        from coding_guardrails.proxy.handler import _reset_conversation_state
+        from coding_guardrails.rules.session_budget import SessionBudgetRule
+
+        rule = SessionBudgetRule(max_file_ops=1, warn_at=1.0)
+        rule.record([ToolCall(tool="edit", args={"path": "a.py"})])
+        assert rule.check(ToolCall(tool="edit", args={"path": "b.py"})).action == Action.BLOCK
+
+        gw = CodingGuardrails(session_budget=rule)
+        _reset_conversation_state(gw)
+
+        assert rule.file_op_count == 0
+        assert rule.check(ToolCall(tool="edit", args={"path": "c.py"})).action == Action.ALLOW
+
+    def test_reset_helper_tolerates_missing_rules(self):
+        from coding_guardrails.middleware import CodingGuardrails
+        from coding_guardrails.proxy.handler import _reset_conversation_state
+
+        _reset_conversation_state(CodingGuardrails())  # no rules wired

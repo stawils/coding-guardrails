@@ -134,3 +134,14 @@ class TestEdgeCases:
         call = ToolCall(tool="bash", args={"command": ""})
         result = rule.check(call)
         assert result.action == Action.ALLOW
+
+
+class TestReset:
+
+    def test_reset_clears_pending(self):
+        from coding_guardrails.rules.sequencing import SequenceRule
+        rule = SequenceRule()
+        rule.check(ToolCall(tool="edit", args={"path": "f.py"}))
+        assert rule.has_pending
+        rule.reset()
+        assert not rule.has_pending

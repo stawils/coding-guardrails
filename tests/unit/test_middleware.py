@@ -277,3 +277,95 @@ def test_check_tool_result():
 
     result = gw.check_tool_result("bash", "all good")
     assert result is None
+
+
+class TestSessionBudgetWiring:
+
+    def test_defaults_are_long_horizon(self):
+        gw = CodingGuardrails.from_config({})
+        assert gw.session_budget.max_file_ops >= 500
+        assert gw.session_budget.max_commands >= 1000
+
+    def test_env_override_without_config(self, monkeypatch):
+        monkeypatch.setenv("CG_MAX_FILE_OPS", "1234")
+        monkeypatch.setenv("CG_MAX_COMMANDS", "4321")
+        gw = CodingGuardrails.from_config({})
+        assert gw.session_budget.max_file_ops == 1234
+        assert gw.session_budget.max_commands == 4321
+
+    def test_config_beats_env(self, monkeypatch):
+        monkeypatch.setenv("CG_MAX_FILE_OPS", "1234")
+        gw = CodingGuardrails.from_config(
+            {"session_budget": {"max_file_ops": 77}}
+        )
+        assert gw.session_budget.max_file_ops == 77
+
+    def test_invalid_env_falls_back(self, monkeypatch):
+        monkeypatch.setenv("CG_MAX_FILE_OPS", "not-a-number")
+        gw = CodingGuardrails.from_config({})
+        assert gw.session_budget.max_file_ops >= 500
+
+    def test_middleware_batch_does_not_overshoot(self):
+        from coding_guardrails.rules.session_budget import SessionBudgetRule
+
+        gw = CodingGuardrails(session_budget=SessionBudgetRule(max_file_ops=3))
+        gw.record([ToolCall(tool="edit", args={"path": "a.py"})])
+        gw.record([ToolCall(tool="edit", args={"path": "b.py"})])
+        assert gw.session_budget.file_op_count == 2
+
+        batch = [ToolCall(tool="edit", args={"path": f"c{i}.py"}) for i in range(3)]
+        result = gw.check(batch)
+        # Only one call fits (the 3rd op); the other two are blocked.
+        assert len(result.allowed) == 1
+        assert len(result.blocked) == 2
+        gw.record(result.allowed)
+        assert gw.session_budget.file_op_count == 3
+
+
+class TestResetConversationState:
+    """The middleware resets every stateful rule at a new conversation."""
+
+    def test_calls_reset_on_stateful_rules(self):
+        from coding_guardrails.rules.base import RuleResult
+
+        class SpyRule:
+            name = "spy"
+
+            def __init__(self):
+                self.reset_calls = 0
+
+            def check(self, call):
+                return RuleResult.allow(call.tool)
+
+            def record(self, calls):
+                pass
+
+            def reset(self):
+                self.reset_calls += 1
+
+        spy = SpyRule()
+        gw = CodingGuardrails(session_budget=spy)
+        gw.reset_conversation_state()
+        assert spy.reset_calls == 1
+
+    def test_tolerates_rules_without_reset(self):
+        from coding_guardrails.rules.base import RuleResult
+
+        class Stateless:
+            name = "stateless"
+
+            def check(self, call):
+                return RuleResult.allow(call.tool)
+
+            def record(self, calls):
+                pass
+
+        gw = CodingGuardrails(session_budget=Stateless())
+        gw.reset_conversation_state()  # must not raise
+
+    def test_defaults_clears_session_budget(self):
+        gw = CodingGuardrails.defaults()
+        gw.session_budget.record([ToolCall(tool="edit", args={"path": "a.py"})])
+        assert gw.session_budget.file_op_count == 1
+        gw.reset_conversation_state()
+        assert gw.session_budget.file_op_count == 0

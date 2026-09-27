@@ -372,6 +372,20 @@ def _text_to_sse_events_relayed(
     return events
 
 
+def _reset_conversation_state(guardrails: CodingGuardrails) -> None:
+    """Reset per-conversation rule state on a fresh conversation.
+
+    Triggered when a request arrives with no assistant messages in history
+    (a new/fresh conversation, /new, /resume, or an eval runner's first
+    request). Delegates to the middleware, which resets every stateful rule
+    that exposes ``reset()`` — critically the session budget, which was a
+    per-process counter otherwise, so after ~100 cumulative edits every later
+    conversation was hard-blocked with "Budget exhausted" — a long-horizon
+    task killer that looked like the model refusing to work.
+    """
+    guardrails.reset_conversation_state()
+
+
 async def handle_chat_completions(
     body: dict[str, Any],
     client: LLMClient,
@@ -416,10 +430,7 @@ async def handle_chat_completions(
     # checking message count, which varies with system prompt length.
     has_assistant = any(m.get("role") == "assistant" for m in openai_messages)
     if not has_assistant:
-        if guardrails.loop_detection:
-            guardrails.loop_detection.reset()
-        if guardrails.thoroughness:
-            guardrails.thoroughness.reset()
+        _reset_conversation_state(guardrails)
 
     # Preprocess messages to fix patterns that confuse local models.
     # Pi sends empty user messages ("\n") as "continue" signals and includes

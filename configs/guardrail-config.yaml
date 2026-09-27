@@ -114,8 +114,13 @@ tool_resolution:
 
 session_budget:
   enabled: true
-  max_file_ops: 300    # 100 was too low for multi-file tasks with retries
-  max_commands: 500    # 200 was too low — model uses sed/head/awk to inspect
+  # Per-conversation runaway backstop, not a task budget. Resets on each new
+  # conversation (see proxy/handler.py). Loop/duplicate detection already stop
+  # real thrashing, so these are deliberately generous: long-horizon tasks
+  # should finish, not die at a cap. Override without config via
+  # CG_MAX_FILE_OPS / CG_MAX_COMMANDS / CG_MAX_READS / CG_WARN_AT.
+  max_file_ops: 1000   # was 300; 100 blocked long multi-file tasks mid-run
+  max_commands: 2000   # was 500; agents grep/sed/test constantly
   max_reads: 0         # unlimited reads (model must read before editing)
   warn_at: 0.85
 

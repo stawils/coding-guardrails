@@ -193,3 +193,24 @@ class TestRuleName:
 
     def test_name_property(self, rule):
         assert rule.name == "dup_write"
+
+
+class TestReset:
+
+    def test_reset_clears_cross_conversation_state(self, rule):
+        """Three identical writes block; reset() lets a new conversation write."""
+        call = ToolCall(tool="write", args={"path": "f.py", "content": "same"})
+        rule.check(call)
+        rule.record([call])
+        rule.record([call])
+        assert rule.check(call).action == Action.BLOCK
+
+        rule.reset()
+
+        assert rule._path_state == {}
+        assert rule.check(call).action == Action.ALLOW
+
+    def test_reset_preserves_thresholds(self, rule):
+        rule.reset()
+        assert rule.nudge_threshold == 2
+        assert rule.block_threshold == 3

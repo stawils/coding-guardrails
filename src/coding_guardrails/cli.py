@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
 import sys
 
 import click
@@ -363,28 +362,44 @@ def list_models() -> None:
 @click.option("--queue-timeout", default=120.0, type=float, show_default=True)
 def _up(models, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     """Start the managed proxy (always-on, lazy GPU backend) — one-command fleet up."""
-    import os
     import subprocess
     import sys
     import time
 
     from coding_guardrails.server.paths import proxy_pid_file, proxy_log_file, run_dir
+    from coding_guardrails.server.proxy_process import pid_is_proxy, proxy_processes
 
     if not models:
         models = ("Qwen3.5-9B-UD-Q4_K_XL",)
 
+    # Only trust a pid file whose pid is verifiably a cg proxy. A stale file
+    # with a recycled pid must not make `cg up` refuse to start forever.
     pf = proxy_pid_file()
     if pf.exists():
         try:
             pid = int(pf.read_text().strip())
-            try:
-                os.kill(pid, 0)
-                click.secho(f"proxy already running (pid {pid}). Run: cg down", fg="yellow", err=True)
-                sys.exit(1)
-            except ProcessLookupError:
-                pass  # stale pid file
         except (ValueError, OSError):
-            pass
+            pid = None
+        if pid is not None and pid_is_proxy(pid):
+            click.secho(f"proxy already running (pid {pid}). Run: cg down", fg="yellow", err=True)
+            sys.exit(1)
+        if pid is not None:
+            click.secho(
+                f"stale proxy pid file (pid {pid} is not a cg proxy); ignoring",
+                fg="yellow", err=True,
+            )
+
+    # A proxy running without a usable pid file (orphan) still holds the port.
+    # Starting another one would die on bind and send systemd into a restart
+    # loop, so refuse and tell the operator to run `cg down`.
+    running = [p for p, _ in proxy_processes()]
+    if running:
+        click.secho(
+            f"proxy process(es) already running without a usable pid file: {running}. "
+            f"Run: cg down",
+            fg="yellow", err=True,
+        )
+        sys.exit(1)
 
     run_dir().mkdir(parents=True, exist_ok=True)
     argv = [
@@ -413,12 +428,14 @@ def _up(models, vram_margin, port, backend_port, idle_timeout, queue_timeout):
 @main.command("down")
 def _down() -> None:
     """Stop the managed proxy + unload the GPU backend (clean: VRAM freed, no orphans)."""
-    import os
-    import time
-
     from coding_guardrails.server import launcher
     from coding_guardrails.server.manager_vram import free_vram_gb, llama_processes
     from coding_guardrails.server.paths import proxy_pid_file
+    from coding_guardrails.server.proxy_process import (
+        pid_is_proxy,
+        proxy_processes,
+        terminate,
+    )
 
     pf = proxy_pid_file()
     pid = None
@@ -426,32 +443,35 @@ def _down() -> None:
         try:
             pid = int(pf.read_text().strip())
         except (ValueError, OSError):
-            pass
+            pid = None
+
+    # Collect targets: the pid-file pid (only if it verifiably IS a proxy) plus
+    # any proxy found by scanning. Relying on the pid file alone is what left a
+    # 15-day orphan holding :8081 and sent systemd into a restart loop.
+    targets: list[int] = []
+    if pid is not None and pid_is_proxy(pid):
+        targets.append(pid)
+    elif pid is not None:
+        click.secho(
+            f"ignoring pid file: pid {pid} is not a cg proxy", fg="yellow", err=True
+        )
+    for other_pid, _ in proxy_processes():
+        if other_pid not in targets:
+            targets.append(other_pid)
 
     stopped_proxy = False
-    if pid:
-        for sig, grace in ((signal.SIGTERM, 5), (signal.SIGKILL, 2)):
-            try:
-                os.kill(pid, sig)
-            except ProcessLookupError:
-                break
-            for _ in range(grace * 5):
-                try:
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    stopped_proxy = True
-                    break
-                time.sleep(0.2)
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
-                stopped_proxy = True
-                break
+    for target in targets:
+        if terminate(target):
+            stopped_proxy = True
+            click.echo(f"proxy (pid {target}) stopped")
+        else:
+            click.secho(f"failed to stop proxy (pid {target})", fg="yellow", err=True)
+
+    if pf.exists():
         try:
             pf.unlink()
         except OSError:
             pass
-        click.echo(f"proxy (pid {pid}) stopped")
 
     # Belt-and-suspenders: ensure the backend llama-server is gone (the proxy may
     # not run its finally/unload on SIGTERM).
@@ -478,6 +498,7 @@ def _status() -> None:
     from coding_guardrails.server import launcher
     from coding_guardrails.server.manager_vram import free_vram_gb, llama_processes
     from coding_guardrails.server.paths import proxy_pid_file
+    from coding_guardrails.server.proxy_process import proxy_processes
 
     pf = proxy_pid_file()
     proxy_up = False
@@ -494,6 +515,15 @@ def _status() -> None:
             click.echo("Proxy:   ? (bad pid file)")
     else:
         click.echo("Proxy:   down (no pid file — run: cg up)")
+
+    # A proxy can be running without a usable pid file. Surface it so the
+    # operator can `cg down` instead of letting systemd restart-loop.
+    orphans = [p for p, _ in proxy_processes()]
+    if orphans and not proxy_up:
+        click.secho(
+            f"  ⚠ orphan proxy process(es) without pid file: {orphans} (run: cg down)",
+            fg="yellow", err=True,
+        )
 
     try:
         urllib.request.urlopen("http://127.0.0.1:8081/health", timeout=3)

@@ -199,3 +199,83 @@ class TestRecordEdgeCases:
             rule.check(call)
             rule.record([call])
         assert rule.command_count == 5
+
+
+class TestLongHorizonDefaults:
+
+    def test_defaults_are_generous(self):
+        """Defaults are a runaway backstop, not a task budget."""
+        r = SessionBudgetRule()
+        assert r.max_file_ops >= 500
+        assert r.max_commands >= 1000
+        assert r.max_reads == 0  # unlimited
+
+    def test_heavy_session_survives_past_old_cap(self):
+        """Regression for the reported symptom: ~100 ops used to hard-block
+        the agent mid-task with \"Budget exhausted\"."""
+        r = SessionBudgetRule()
+        for i in range(150):
+            call = ToolCall(tool="edit", args={"path": f"f{i}.py"})
+            assert r.check(call).action != Action.BLOCK
+            r.record([call])
+        assert r.file_op_count == 150
+
+
+class TestBatchOvershoot:
+
+    def test_batch_does_not_overshoot_cap(self):
+        """A batch of edits at cap-1 must yield exactly one allowed call.
+
+        Regression: check() did not reserve budget, so N calls in one batch
+        all passed and record() pushed the counter past the cap (102/100).
+        """
+        r = SessionBudgetRule(max_file_ops=100, max_commands=200)
+        for _ in range(99):
+            r.record([ToolCall(tool="edit", args={"path": "f.py"})])
+        assert r.file_op_count == 99
+
+        calls = [ToolCall(tool="edit", args={"path": f"f{i}.py"}) for i in range(3)]
+        allowed = [c for c in calls if r.check(c).action != Action.BLOCK]
+        assert len(allowed) == 1  # only the 100th op fits
+        r.record(allowed)
+        assert r.file_op_count == 100
+
+        # Every further edit blocks with an exact count, never 101/100.
+        blocked = r.check(ToolCall(tool="edit", args={"path": "next.py"}))
+        assert blocked.action == Action.BLOCK
+        assert "100/100" in blocked.nudge
+
+    def test_begin_batch_drops_leaked_reservations(self):
+        r = SessionBudgetRule(max_file_ops=2, warn_at=1.0)
+        assert r.check(ToolCall(tool="edit", args={"path": "a.py"})).action == Action.ALLOW
+        assert r.check(ToolCall(tool="edit", args={"path": "b.py"})).action == Action.ALLOW
+        assert r.check(ToolCall(tool="edit", args={"path": "c.py"})).action == Action.BLOCK
+        r.begin_batch()
+        # Reservations dropped, real count still 0 -> allowed again.
+        assert r.check(ToolCall(tool="edit", args={"path": "d.py"})).action == Action.ALLOW
+
+    def test_reset_clears_pending_reservations(self):
+        r = SessionBudgetRule(max_file_ops=1, warn_at=1.0)
+        assert r.check(ToolCall(tool="edit", args={"path": "a.py"})).action == Action.ALLOW
+        assert r.check(ToolCall(tool="edit", args={"path": "b.py"})).action == Action.BLOCK
+        r.reset()
+        assert r.check(ToolCall(tool="edit", args={"path": "c.py"})).action == Action.ALLOW
+
+
+class TestBlockRecoveryPath:
+
+    def test_block_message_tells_agent_how_to_finish(self):
+        """Exhaustion must not be a dead end: the agent needs an exit tool."""
+        r = SessionBudgetRule(max_file_ops=1)
+        r.record([ToolCall(tool="edit", args={"path": "a.py"})])
+        result = r.check(ToolCall(tool="edit", args={"path": "b.py"}))
+        assert result.action == Action.BLOCK
+        assert "respond()" in result.nudge
+        assert "1/1" in result.nudge
+
+    def test_command_block_has_recovery_path(self):
+        r = SessionBudgetRule(max_commands=1)
+        r.record([ToolCall(tool="bash", args={"command": "ls"})])
+        result = r.check(ToolCall(tool="bash", args={"command": "pwd"}))
+        assert result.action == Action.BLOCK
+        assert "respond()" in result.nudge

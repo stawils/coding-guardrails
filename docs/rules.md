@@ -195,20 +195,26 @@ same file with different content.
 
 ## 9. Session Budget (`session_budget`)
 
-**What it does:** Caps total operations per session to prevent runaway agents.
+**What it does:** Caps total operations per **conversation** as a runaway backstop.
+The counter resets whenever a new conversation starts, so long-horizon work is
+never blocked by operations accumulated in earlier conversations.
 
-**Default:** 100 file ops, 200 commands, unlimited reads.
+**Default:** 1000 file ops, 2000 commands, unlimited reads.
 
 | Setting | Default | Description |
 |---|---|---|
-| `max_file_ops` | `100` | Maximum edit/write operations |
-| `max_commands` | `200` | Maximum shell command executions |
+| `max_file_ops` | `1000` | Maximum edit/write operations |
+| `max_commands` | `2000` | Maximum shell command executions |
 | `max_reads` | `0` | Maximum reads (0 = unlimited) |
 | `warn_at` | `0.8` | Fraction at which to warn (80%) |
 
+Defaults can be overridden without a config file via `CG_MAX_FILE_OPS`,
+`CG_MAX_COMMANDS`, `CG_MAX_READS`, and `CG_WARN_AT`.
+
 **Behavior:**
-- Warns (nudge) at 80% of budget
-- Blocks at 100% of budget
+- Warns (nudge) at `warn_at` of budget
+- Blocks at 100%, with an explicit wrap-up path (`respond()` / report what remains)
+- Counting is exact: a batch of calls cannot overshoot the cap (`102/100` was a bug)
 
 ---
 

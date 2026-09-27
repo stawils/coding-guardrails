@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 711 tests (~24s)
+pytest tests/unit/ -q          # 746 tests (~24s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -56,7 +56,7 @@ Agent → :8081 (our proxy)
 | `secrets` | block/mask | Secret detection |
 | `loop_detection` | nudge→block | Repeated identical calls (3 nudge, 5 block) |
 | `dup_write` | nudge→block | Identical-content duplicate writes (2 nudge, 3 block) |
-| `session_budget` | nudge | File/command budgets |
+| `session_budget` | nudge→block | Per-conversation cap (1000 file ops / 2000 cmds; resets on new conversation) |
 | `thoroughness` | nudge | Premature terminal submission |
 | `sequencing` | nudge | Test-after-change |
 | `tool_resolution` | nudge | Empty/error results |
@@ -279,11 +279,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 711 tests
+pytest tests/unit/ -q              # All 746 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 711 tests must pass before committing.
+All 746 tests must pass before committing.
 
 ## Eval
 
@@ -328,7 +328,7 @@ files — re-sync `tests/eval` from forge upstream after any vendor refresh.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 711 unit tests must pass
+- All 746 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -359,7 +359,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 711 tests MUST pass
+pytest tests/unit/ -q          # All 746 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

@@ -343,14 +343,14 @@ guardrails:
 
     def test_default_config_loads_with_correct_budget(self):
         """The shipped configs/guardrail-config.yaml must load with
-        max_file_ops=300 (not the default 100)."""
+        max_file_ops=1000 (not an older/low value)."""
         from coding_guardrails.config import load_guardrail_config
         from pathlib import Path
         repo_config = Path(__file__).parent.parent.parent / "configs" / "guardrail-config.yaml"
         if not repo_config.exists():
             pytest.skip("Shipped config not found")
         config = load_guardrail_config(repo_config)
-        assert config.get("session_budget", {}).get("max_file_ops") == 300
+        assert config.get("session_budget", {}).get("max_file_ops") == 1000
 
     def test_default_config_prereq_edit_tools_are_pi_compatible(self):
         """The shipped config must list 'edit'/'write'/'create' (Pi's tool

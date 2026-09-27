@@ -34,7 +34,7 @@ coding-guardrails proxy (:8081)
   │   ├── prerequisites    — ensure read-before-edit (prefix matching)
   │   ├── loop_detection   — detect and break stuck agent loops
   │   ├── dup_write        — break identical-content duplicate writes
-  │   ├── session_budget   — cap file ops and commands per session
+  │   ├── session_budget   — cap file ops and commands per conversation
   │   ├── sequencing       — suggest running tests after changes
   │   ├── thoroughness     — detect premature terminal submission
   │   └── tool_resolution  — warn on empty/error tool results
@@ -132,8 +132,8 @@ loop_detection:
 
 session_budget:
   enabled: true
-  max_file_ops: 100
-  max_commands: 200
+  max_file_ops: 1000
+  max_commands: 2000
 ```
 
 Rules can be:

@@ -151,3 +151,11 @@ class DuplicateWriteRule:
             if len(self._path_state) > self.max_tracked:
                 oldest = next(iter(self._path_state))
                 del self._path_state[oldest]
+
+    def reset(self) -> None:
+        """Clear per-conversation duplicate-write history.
+
+        Called at the start of a new conversation so a fresh task is not
+        blocked by an identical write performed in an earlier conversation.
+        """
+        self._path_state.clear()
