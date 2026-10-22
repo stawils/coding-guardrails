@@ -102,6 +102,41 @@ PROFILES: dict[str, ModelProfile] = {
                      "-ctk", "q4_0", "-ctv", "q4_0",
                      "--spec-type", "draft-mtp", "-np", "1"],
     ),
+    # ── Flint (MoE, 39.8B total / 2.5B active, 256K ctx, Apache-2.0) ──
+    # Recursive's agentic-coding MoE (released 2026-10-21), trained from
+    # scratch with their "Eureka Machine" automated-research loop. 49 layers:
+    # 2 dense + 47 MoE (256 routed experts, 6/token + shared expert). 35
+    # sliding-window layers (window 513) + 14 full-attention layers — KV only
+    # grows on the 14 full layers, so long ctx is cheap. Per-head QK RMSNorm +
+    # attention sinks; no positional encoding on full-attention layers.
+    # Only 2.5B active params/token → fast decode. Vendor: Terminal-Bench 2.1
+    # 54.9, SWE-bench Pro v2 89.7, SWE-bench Verified 74.2, LiveCodeBench v6
+    # 80.3, IFBench 89.2, IFEval 95.1. Requires llama.cpp >= d77256999
+    # (LLM_ARCH_FLINT, #30928) — pin bumped 2026-11-01.
+    # MEASURED 2026-11-01 (RTX 3090 Ti 24 GB shared desktop, UD-Q3_K_XL):
+    #   128K ctx q8_0 KV boots clean; incremental VRAM ~20.0 GB (2.5 GB desktop
+    #   baseline → 22.3 GB used, ~0.7 GB free); ~107 tok/s decode (2.5B active).
+    #   Full 150-run proxy eval: 145/150 completion (96.7%), 135/150 accuracy
+    #   (90%), 24 min wall (fastest 40B-class run; Qwen3.8-27B took 38 min).
+    #   All compaction_chain + data_gap_* 100%. Weak: tool_selection 40%
+    #   (answers in prose instead of calling respond() → Forge retry exhaustion),
+    #   argument_transformation (number aggregation), one repetition loop →
+    #   backend 500 on a malformed 16K-token summarize call.
+    # Card sampling: temp 1.0, top_p 0.95, top_k 20. No MTP tensors.
+    "flint-UD-Q3_K_XL": ModelProfile(
+        name="flint-UD-Q3_K_XL",
+        family="Flint",
+        quant="UD-Q3_K_XL",
+        file_size_gb=18.49,
+        vram_required_gb=19.9,  # measured incremental ~20.0 GB @128K q8_0 KV (2.5B active, 14 KV-holding layers); gate just below the measured floor so a ~2.5 GB desktop baseline still loads
+        context_tokens=131072,
+        architecture="moe",
+        active_params_b=2.5,
+        swe_bench_verified=74.2,
+        sampling={"temperature": 1.0, "top_p": 0.95, "top_k": 20},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1"],
+    ),
     # ── LFM2.5-2.6B (Dense hybrid, 2.6B params, 128K ctx, BF16) ──
     # Liquid AI LFM2.5 — agentic post-trained (RL inside agentic harnesses).
     # Hybrid arch: 22 double-gated short-conv blocks + 8 GQA attention layers.

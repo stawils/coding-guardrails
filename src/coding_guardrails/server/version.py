@@ -17,11 +17,12 @@ from coding_guardrails.server.paths import binary_path, source_dir
 
 logger = logging.getLogger("coding_guardrails.server.version")
 
-#: Exact commit cg builds against. Latest master (2026-06-26): keeps the
-#: gemma-4 tool-call fix and has the dense qwen35 arch (Ornith-1.0-9B) plus
-#: any recent linear-attention graph fixes.
-PINNED_COMMIT = "5a6a0dd7e1f7342bac4618a223fc21f9cece3b48"
-PINNED_SHORT = "5a6a0dd7e"
+#: Exact commit cg builds against. Latest master (2026-10-21+): keeps the
+#: gemma-4 tool-call fix, the dense qwen35 arch (Ornith-1.0-9B), and adds the
+#: Flint MoE arch (`LLM_ARCH_FLINT`, #30928) plus the muse-glimmer/laguna
+#: archs. Build 2026-11-01.
+PINNED_COMMIT = "d77256999f211f8c0a5b12d13564f48d685b59e7"
+PINNED_SHORT = "d77256999"
 
 
 def installed_commit() -> str | None:

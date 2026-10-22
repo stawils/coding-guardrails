@@ -12,6 +12,7 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
 | **Ornith-1.0-9B** | Q8_0 | 9.5 GB | 18.0 GB | **200K** | 9B | Dense | ~50 tok/s |
+| **Flint** | UD-Q3_K_XL | 18.49 GB | 19.9 GB | **128K** (q8_0 KV) | 2.5B | MoE (39.8B total) | ~107 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
 | **MiniCPM5-2B** | Q4_K_M | 1.56 GB | ~3.0 GB | **131K** | 2.52B | Dense | ~182 tok/s |
 
@@ -29,6 +30,7 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 | **Qwen3.5-9B** | **150/150 (100%)** | 138/150 (92%) | 2026-08-08_142633Z |
 | **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** | 2026-08-08_144837Z |
 | **Qwen3.6-27B** | **149/150 (99.3%)** | 141/150 (94%) | 2026-08-07_151927Z |
+| **Flint** | 145/150 (96.7%) | 135/150 (90%) — fastest 40B-class run (24 min); tool_selection 40% (prose instead of respond()) | 2026-10-22_144116Z |
 | **LFM2.5-2.6B** | 139/150 (92.7%) | 100/140 (71%) — card caveat confirmed | 2026-08-08_153811Z |
 | **MiniCPM5-2B** | **150/150 (100%)** | **128/150 (85%)** — tool_selection 5/5 (fixes LFM2.5 0/5); data_gap_recovery_extended 100% | 2026-09-08_111510Z |
 
@@ -157,6 +159,47 @@ $LLAMA \
 - Vendor benchmarks vs Qwen3.6-27B: SWE-bench Pro 61.7 (vs 53.5), Terminal-Bench 2.1
   73.0 (vs 63.4), DeepSWE 1.1 42.2 (vs 13.3), QwenSWEBench 79.0 (vs 49.3),
   LiveCodeBench v6 90.3, GPQA Diamond 89.2.
+
+## Flint (MoE 39.8B-A2.5B — fast agentic-coding tier, 128K context, Apache-2.0)
+
+- Recursive Flint, released 2026-10-21, **Apache-2.0**. **39.8B total / ~2.5B active**
+  MoE: 49 layers (2 dense + 47 MoE, 256 routed experts, 6/token + shared expert).
+  35 sliding-window layers (window 513) + 14 full-attention layers — only the 14
+  full layers grow KV, so long context is cheap. Per-head QK RMSNorm + attention
+  sinks; no positional encoding on the full-attention layers.
+- **Needs llama.cpp ≥ `d77256999`** (`LLM_ARCH_FLINT`, upstream #30928). cg's pin
+  was bumped from `5a6a0dd7e` (2026-06-26) to `d77256999` (2026-10-22) for this;
+  the rebuild was smoke-tested against the Qwen3.8-27B default (MTP + mmproj OK).
+- **Measured 2026-11-01 (Forge eval, proxy mode, 150 runs): 145/150 completion
+  (96.7%), 135/150 accuracy (90%), 24 min wall** — the fastest 40B-class run on
+  this harness (Qwen3.8-27B: 38 min). 100% on every `compaction_chain_*` and
+  `data_gap_*` scenario, and on most `*_stateful` families.
+- **Weak spots (documented, not proxy bugs):** `tool_selection` 40% — Flint often
+  answers in prose instead of calling the declared `respond()` tool, so Forge's
+  validator retries to exhaustion (same failure class as LFM2.5's tool_selection,
+  but partial). `argument_transformation` (aggregation arithmetic) and
+  `inconsistent_api_recovery` ~60%. One `error_recovery` run entered a repetition
+  loop and came back as a backend 500.
+- **VRAM:** 18.49 GB UD-Q3_K_XL + ~1.5 GB q8_0 KV/compute @128K ≈ **20.0 GB
+  incremental** (22.3 GB used with a 2.5 GB desktop baseline, ~0.7 GB free).
+  Profile gate = 19.9 GB. Default ctx 131072 of the native 262144.
+- Sampling (Recursive): temp 1.0, top_p 0.95, top_k 20. No MTP tensors — do NOT
+  pass `--spec-type draft-mtp`. Emits `reasoning_content` (captured by the proxy).
+- Vendor benchmarks: Terminal-Bench 2.1 54.9, SWE-bench Pro v2 89.7,
+  SWE-bench Verified 74.2, LiveCodeBench v6 80.3, IFBench 89.2, IFEval 95.1.
+
+### Flint boot command
+
+```bash
+# Manager (preferred): cg server start -m flint-UD-Q3_K_XL
+# Raw equivalent:
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/flint-GGUF/flint-UD-Q3_K_XL.gguf \
+  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1
+# ~107 tok/s decode, ~20 GB VRAM. Reasoning model — keep max_tokens generous
+# (hard problems: >= 32K output budget per the model card).
+```
 
 ## Qwen3.5-9B (Default) ⭐
 
@@ -287,6 +330,19 @@ llama-server \
 ```
 
 > **Notes:** q4_0 KV is required for 128K + MTP on 24 GB (q8_0 KV + MTP OOMs).
+
+### Flint (128K context, q8_0 KV — fast MoE tier)
+
+```bash
+llama-server \
+  -m flint-UD-Q3_K_XL.gguf \
+  --jinja --flash-attn auto \
+  --port 8080 -c 131072 \
+  -ctk q8_0 -ctv q8_0 -np 1
+```
+
+> **Notes:** No `--spec-type draft-mtp` — the Flint GGUF has no MTP tensors.
+> Requires llama.cpp ≥ `d77256999`; ~20 GB VRAM at 128K.
 
 > **Notes:** No `--spec-type draft-mtp` — the official Ornith GGUF has no MTP tensors.
 > Reasoning model: enable a reasoning parser if driving llama-server directly; the

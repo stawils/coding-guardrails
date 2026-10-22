@@ -63,6 +63,11 @@ SOURCES: dict[str, ModelSource] = {
         filename="Qwen3.8-27B-UD-Q3_K_XL.gguf",
         license="Apache-2.0",
     ),
+    "flint-UD-Q3_K_XL": ModelSource(
+        repo_id="unsloth/flint-GGUF",
+        filename="flint-UD-Q3_K_XL.gguf",
+        license="Apache-2.0",
+    ),
     "Qwen3.6-27B-UD-Q4_K_XL": ModelSource(
         repo_id="unsloth/Qwen3.6-27B-MTP-GGUF",
         filename="Qwen3.6-27B-UD-Q4_K_XL.gguf",

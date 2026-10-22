@@ -160,6 +160,25 @@ $LLAMA \
   --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 \
   --spec-type draft-mtp -np 1 -v
 
+# Flint UD-Q3_K_XL (fast MoE tier — 39.8B total / 2.5B active, 128K ctx)
+#   Recursive Flint, released 2026-10-21, Apache-2.0. 49 layers (2 dense + 47 MoE,
+#   256 routed experts, 6/token + shared expert); 35 sliding-window (513) + 14
+#   full-attn layers → cheap KV at long ctx. NO MTP tensors (do not pass
+#   --spec-type draft-mtp). Needs llama.cpp ≥ d77256999 (LLM_ARCH_FLINT, #30928)
+#   — cg's pin was bumped to it on 2026-11-01.
+#   MEASURED 2026-11-01 Forge eval (proxy mode, 150 runs): 145/150 completion
+#   (96.7%), 135/150 accuracy (90%), 24 min wall (fastest 40B-class run). All
+#   compaction_chain + data_gap_* 100%. Weak: tool_selection 40% (answers in
+#   prose instead of calling respond() → Forge retry exhaustion),
+#   argument_transformation / inconsistent_api_recovery ~60%.
+#   VRAM: ~20.0 GB incremental @128K q8_0 KV (22.3 GB used with 2.5 GB desktop
+#   baseline); gate 19.9. ~107 tok/s decode.
+#   Manager: cg server start -m flint-UD-Q3_K_XL
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/flint-GGUF/flint-UD-Q3_K_XL.gguf \
+  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1 -v
+
 # Qwen3.5-9B-MTP (previous default — best tool-calling reliability at 9B)
 #   Hybrid SSM/Transformer arch (qwen35), 33 layers. MTP = Multi-Token Prediction:
 #   `--spec-type draft-mtp` uses the model's built-in MTP head as a draft model for
@@ -251,7 +270,7 @@ coding-guardrails serve \
 
 ### Notes
 
-- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). Rebuilt 2026-07-03 to latest master (commit `fdb1db877`, build 9860) — supports Qwen3.5-MTP, Qwen3.6-27B (qwen3next arch / `ssm_conv1d`), Gemma 4, Ornith, LFM2.5 (`lfm2` arch). Build config: `GGML_CUDA=ON`, `LLAMA_CURL=ON`, Release. NCCL disabled (single-GPU). Stale `llama-server.bak.8276` kept as backup.
+- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-01 to `d77256999`** (was `5a6a0dd7e`, 2026-06-26) for the Flint MoE arch (`LLM_ARCH_FLINT`, upstream #30928), which also carries the Gemma 4 tool-call fix, Qwen3.5/3.6/3.8, Ornith, LFM2.5 and MiniCPM5 support. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The rebuild was smoke-tested against the Qwen3.8-27B default (MTP + mmproj) on 2026-11-01.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
 - Qwen3.6-27B: max reliable ctx on the 24 GB card is **48K with q8_0 KV** (UD-Q4_K_XL). 56K+ needs a
@@ -314,6 +333,10 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 **MiniCPM5-2B (added v0.20.0 as the tiny tier): 150/150 (100%) completion, 128/150 (85%) accuracy**
 — tool_selection 5/5 (+stateful) and data_gap_recovery_extended 100% fix LFM2.5's genuine gaps;
 only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay weak.
+**Flint (added v0.23.0 as the fast MoE tier): 145/150 (96.7%) completion, 135/150 (90%)
+accuracy, 24 min wall** — the fastest 40B-class run; all compaction_chain + data_gap_*
+100%, but tool_selection 40% (prose instead of respond()) and argument_transformation
+~40-60%.
 
 **Eval-harness sync (2026-09-08, v0.20.1):** the vendored `tests/eval` harness was 49 commits
 stale (v0.7.0-era); its `CountingClientWrapper` lacked the `passthrough`/`inbound_anthropic_body`/
