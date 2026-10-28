@@ -6,10 +6,60 @@ rm -rf /, fork bombs, pipe-to-shell, format disks, sudo, etc.
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
 from dataclasses import dataclass, field
 
-from coding_guardrails.rules.base import RuleResult, ToolCall
+from coding_guardrails.rules.base import (
+    JUDGE_BLOCK_THRESHOLD,
+    JUDGE_NUDGE_THRESHOLD,
+    Action,
+    RuleResult,
+    ToolCall,
+)
+from coding_guardrails.rules.judge import DecisionClient
+
+logger = logging.getLogger("coding_guardrails.layer2.commands")
+
+# Probes sent to the semantic judge. Numeric (noul) probes feed the p value;
+# `scope` is informational and never gates in increment 1.
+JUDGE_QUESTIONS: dict[str, dict] = {
+    "destructive": {
+        "type": "noul",
+        "instructions": (
+            "Does this shell command delete, overwrite, or destructively mutate "
+            "real systems or data?"
+        ),
+    },
+    "irreversible": {
+        "type": "noul",
+        "instructions": (
+            "Would the effect of this shell command be impossible to undo by "
+            "ordinary recovery?"
+        ),
+    },
+    "exfiltrates": {
+        "type": "noul",
+        "instructions": (
+            "Does this shell command copy data, secrets, or files out of the "
+            "machine through a network request, subshell, or socket?"
+        ),
+    },
+    "scope": {
+        "type": "choice",
+        "instructions": "What does this command operate on?",
+        "criteria": {
+            "production": "Live production systems or real user data",
+            "staging": "A staging or test environment",
+            "local": "The local development workspace only",
+            "backup-leg": "Backup or recovery tooling",
+        },
+    },
+}
+
+_NUMERIC_PROBES = ("destructive", "irreversible", "exfiltrates")
 
 
 @dataclass
@@ -120,6 +170,15 @@ class CommandSafetyRule:
         "TRUNCATE",
     ])
 
+    # Optional semantic judge (default None = deterministic-only, unchanged).
+    judge: DecisionClient | None = None
+    # Render the mid-band (0.5 < p <= 0.8) as a block instead of an advisory
+    # nudge. Off by default: streaming agents do not see nudges (see plan
+    # 2026-10-28 open question 1).
+    judge_graded_blocks: bool = False
+    judge_block_threshold: float = JUDGE_BLOCK_THRESHOLD
+    judge_nudge_threshold: float = JUDGE_NUDGE_THRESHOLD
+
     @property
     def name(self) -> str:
         return "command_safety"
@@ -139,7 +198,73 @@ class CommandSafetyRule:
             if result is not None:
                 return result
 
+            if self.judge is not None:
+                judged = self._consult_judge(command, call.tool)
+                if judged is not None:
+                    return judged
+
         return RuleResult.allow(call.tool)
+
+    def _consult_judge(self, command: str, tool: str) -> RuleResult | None:
+        """Ask the semantic judge about a command the patterns let through.
+
+        Returns None when the verdict is allow (or the judge failed — fail-open).
+        """
+        state = json.dumps({
+            "command": command,
+            "tool": tool,
+            "cwd": os.getcwd(),
+        })
+        decision = self.judge.decide(state, JUDGE_QUESTIONS)  # type: ignore[union-attr]
+
+        if decision.failed:
+            logger.info(
+                "JUDGE %s | %s — %s after %.0fms (allowed)",
+                tool, command[:80], decision.error, decision.elapsed_ms,
+            )
+            return None
+
+        probe = decision.top_probe()
+        p = decision.p
+        if probe not in _NUMERIC_PROBES:
+            # Only numeric probes can gate; a choice-only answer is ignored.
+            numeric = {k: v for k, v in decision.answers.items() if k in _NUMERIC_PROBES}
+            if not numeric:
+                return None
+            probe = max(numeric, key=lambda k: numeric[k])
+            p = decision.answers[probe]
+
+        if p > self.judge_block_threshold:
+            action = Action.BLOCK
+        elif p > self.judge_nudge_threshold:
+            action = Action.BLOCK if self.judge_graded_blocks else Action.NUDGE
+        else:
+            action = Action.ALLOW
+
+        outcome = action.value
+        logger.info(
+            "JUDGE %s | %s — %s p=%.2f (%.0fms, %s)",
+            tool, command[:80], outcome, p, decision.elapsed_ms, decision.engine,
+        )
+        if action == Action.ALLOW:
+            return None
+
+        verb = "blocked" if action == Action.BLOCK else "advisory"
+        message = (
+            f"Command {verb}: semantic judge flagged '{probe}' "
+            f"(p={p:.2f}, engine={decision.engine}). "
+            f"Command: {command[:120]}"
+        )
+        return RuleResult(
+            action=action,
+            tool=tool,
+            nudge=message,
+            reason=f"judge {probe} p={p:.2f} ({decision.engine})",
+            confidence=p,
+            judge_consulted=True,
+            judge_engine=decision.engine,
+            judge_outcome=outcome,
+        )
 
     def _check_command(self, command: str, tool: str) -> RuleResult | None:
         """Check a single command string. Returns None if safe."""

@@ -40,6 +40,7 @@ from coding_guardrails.rules.thoroughness import ThoroughnessRule
 from coding_guardrails.rules.tool_resolution import ToolResolutionRule
 from coding_guardrails.rules.canary import CanaryRule, _new_canary
 from coding_guardrails.rules.injection import InputScanRule
+from coding_guardrails.rules.judge import JudgeConfig, build_judge
 
 logger = logging.getLogger("coding_guardrails.layer2")
 
@@ -130,6 +131,11 @@ class CodingGuardrails:
         """
         rules: dict[str, Rule | None] = {}
 
+        # Semantic judge (opt-in, default off). One shared client for every
+        # rule that opts in via judge.rules; None when disabled.
+        judge_cfg = JudgeConfig.from_dict(config.get("judge"))
+        judge = build_judge(config.get("judge"))
+
         # Prerequisites
         prereq_cfg = config.get("prerequisites", {})
         if prereq_cfg.get("enabled", True):
@@ -163,6 +169,9 @@ class CodingGuardrails:
                 kwargs["blocked_patterns"] = cmd_cfg["blocked_patterns"]
             if "require_confirmation" in cmd_cfg:
                 kwargs["require_confirmation"] = cmd_cfg["require_confirmation"]
+            if judge is not None and "command_safety" in judge_cfg.rules:
+                kwargs["judge"] = judge
+                kwargs["judge_graded_blocks"] = judge_cfg.graded_blocks
             rules["command_safety"] = CommandSafetyRule(**kwargs)
 
         # Network

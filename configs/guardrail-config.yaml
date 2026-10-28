@@ -155,3 +155,27 @@ lint:
   #     extensions: [".rs"]
   #     command: ["cargo", "clippy", "--", "--no-deps", "-q"]
   #     path_mode: project
+
+# ── Semantic judge (opt-in, default OFF) ────────────────────────────────────
+# A calibrated probability decider (sibling project `~/workspaces/decision-layer`)
+# consulted by a rule only AFTER its deterministic patterns found nothing. It is
+# the fallback for novel phrasings of known-dangerous actions (see
+# plans/2026-06-15_exfil-vector-investigation.md — 8 documented bypasses).
+#
+# Costs: ~2GB VRAM while the engine is warm (dlserver idle-unloads it), plus
+# ~40-105ms warm per consult. Nothing is loaded in the proxy process and no
+# VRAM is used when this block is absent.
+#
+# Start the service: ~/workspaces/decision-layer/scripts/start-dlserver.sh 8044
+# Health:            curl http://127.0.0.1:8044/health
+#
+# Failure behaviour is fail-open: a timeout, connection error, or malformed
+# reply allows the call and logs JUDGE unavailable (...). No retries.
+# judge:
+#   enabled: false                  # turn on to consult the judge
+#   url: "http://127.0.0.1:8044"    # dlserver
+#   engine: "decider-0.8b"          # ~2GB; "decider-2b" (~4GB) for safety-critical
+#   timeout_ms: 500                 # whole budget, no retries
+#   consult_when: "deterministic-allow"  # only when every pattern passed
+#   graded_blocks: false            # true = mid-band (0.5-0.8) becomes a block
+#   rules: ["command_safety"]       # rules allowed to consult the judge

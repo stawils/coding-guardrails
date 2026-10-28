@@ -21,6 +21,25 @@ class Action(str, Enum):
     NUDGE = "nudge"
 
 
+# Judge band thresholds, shared by rules, middleware and tests so there is one
+# definition of "how sure is sure enough". Only consulted when a judge fired;
+# deterministic results never carry a probability.
+JUDGE_BLOCK_THRESHOLD = 0.8   # p > this  -> BLOCK
+JUDGE_NUDGE_THRESHOLD = 0.5   # p > this  -> NUDGE, else ALLOW
+
+
+def judge_action(p: float, thresholds: tuple[float, float] = (
+    JUDGE_NUDGE_THRESHOLD, JUDGE_BLOCK_THRESHOLD,
+)) -> Action:
+    """Map a judge probability to an Action using the shared band thresholds."""
+    nudge_at, block_at = thresholds
+    if p > block_at:
+        return Action.BLOCK
+    if p > nudge_at:
+        return Action.NUDGE
+    return Action.ALLOW
+
+
 @dataclass(frozen=True)
 class ToolCall:
     """A single tool invocation to check.
@@ -44,6 +63,12 @@ class RuleResult:
         nudge: Corrective message (set when action is block or nudge).
         reason: Human-readable explanation for logging.
         rule_name: Name of the rule that produced this result.
+        confidence: Judge probability for the fired action, or None when the
+            result came from a deterministic rule.
+        judge_consulted: True when a semantic judge produced this result.
+        judge_engine: Engine name that answered (e.g. "decider-0.8b").
+        judge_outcome: Band/outcome label ("block" | "nudge" | "allow" |
+            "timeout" | "error"), for audit.
     """
 
     action: Action
@@ -51,6 +76,10 @@ class RuleResult:
     nudge: str | None = None
     reason: str | None = None
     rule_name: str = ""
+    confidence: float | None = None
+    judge_consulted: bool = False
+    judge_engine: str | None = None
+    judge_outcome: str | None = None
 
     @staticmethod
     def allow(tool: str) -> RuleResult:
@@ -100,6 +129,10 @@ class CheckResult:
     def nudge_messages(self) -> list[str]:
         """Return all nudge messages as strings."""
         return [r.nudge for r in self.nudges if r.nudge]
+
+    def judge_results(self) -> list[RuleResult]:
+        """Return every result (block or nudge) that a judge produced."""
+        return [r for r in (*self.blocked, *self.nudges) if r.judge_consulted]
 
     def block_messages(self) -> list[str]:
         """Return all block messages as strings."""

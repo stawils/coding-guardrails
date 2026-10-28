@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 746 tests (~24s)
+pytest tests/unit/ -q          # 781 tests (~24s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -63,6 +63,26 @@ Agent → :8081 (our proxy)
 | `lint` | nudge/block | Multi-language lint on edits (ruff/biome/gofmt) — noticing offload |
 | `canary` | block | Context-exfiltration tripwire: unique token planted in system prompt; any tool call echoing it is blocked |
 | `input_scanning` | mark | Prompt-injection signatures in inbound message content (indirect injection via tool results spotlighted) |
+
+### Semantic judge (opt-in, default OFF)
+
+A calibrated probability decider (sibling project `~/workspaces/decision-layer`)
+consulted by `command_safety` **only after every deterministic pattern missed**.
+It exists for novel phrasings of known-dangerous actions — see
+`plans/2026-06-15_exfil-vector-investigation.md` (8 accepted bypasses).
+
+- Config: `judge:` block in `configs/guardrail-config.yaml` (`enabled: false` by default).
+- Transport: HTTP `POST {url}/v1/decide` to `dlserver :8044`. No model in the proxy process.
+- Grading: `p > 0.8` block, `0.5 < p <= 0.8` nudge (block if `graded_blocks: true`).
+- Failure: **fail-open** (timeout/error ⇒ allow + `JUDGE unavailable` log). No retries.
+- Measured 2026-10-28 on `decider-0.8b`: 21/21 exfil vectors blocked (14 deterministic,
+  **7 newly**), 0 regressions, 0/8 curated benign FPs, p50/p95 **26/29ms**.
+  Broader dev commands: **3/18 false positives** (`scp`/`rsync` backup, `find -delete`) —
+  the judge lacks an authorization dimension, which is why it defaults off.
+- Ops: `HF_HUB_OFFLINE=1 TORCHDYNAMO_DISABLE=1 ~/workspaces/decision-layer/scripts/start-dlserver.sh 8044`.
+  `TORCHDYNAMO_DISABLE=1` is required on this machine (torch 2.11 dynamo/FX error wedges
+  the decider's CUDA-graph capture otherwise).
+- Details: `docs/semantic-judge.md`. Validate: `python eval/scripts/run_security_eval.py --exfil-battery`.
 
 ## Production Rules
 
@@ -315,11 +335,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 746 tests
+pytest tests/unit/ -q              # All 781 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 746 tests must pass before committing.
+All 781 tests must pass before committing.
 
 ## Eval
 
@@ -339,6 +359,11 @@ python eval/scripts/run_layer2_eval.py
 # Adversarial security suite (attack scenarios + benign false-positive checks,
 # deterministic — no LLM, sub-second, CI-able)
 python eval/scripts/run_security_eval.py
+
+# Semantic-judge validation: 21 exfil vectors, deterministic vs judge-on,
+# latency, curated benign controls + developer-FP profile (needs dlserver)
+python eval/scripts/run_security_eval.py --exfil-battery -v \
+  --judge-url http://127.0.0.1:8045 --judge-engine decider-0.8b --judge-timeout-ms 2000
 ```
 
 Results go to `eval/runs/<timestamp>/` (gitignored).
@@ -372,7 +397,7 @@ files — re-sync `tests/eval` from forge upstream after any vendor refresh.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 746 unit tests must pass
+- All 781 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -403,7 +428,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 746 tests MUST pass
+pytest tests/unit/ -q          # All 781 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

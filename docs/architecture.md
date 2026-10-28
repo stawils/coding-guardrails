@@ -39,6 +39,10 @@ coding-guardrails proxy (:8081)
   │   ├── thoroughness     — detect premature terminal submission
   │   └── tool_resolution  — warn on empty/error tool results
   │
+  │   Optional (off by default): rules may consult a semantic judge over HTTP
+  │   (dlserver :8044) when their patterns matched nothing. See
+  │   docs/semantic-judge.md. The proxy never loads a model for this.
+  │
   ▼
 llama-server (:8080) → GPU inference
   │
