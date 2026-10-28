@@ -232,6 +232,46 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 1.0, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
     ),
+    # ── LFM3-1.7B (Dense tri-hybrid, 1.73B, 256K ctx, Q8_0) ──
+    # Liquid AI LFM3 (released 2026-10-21+, Apache-style LFM Open License 1.0).
+    # Tri-hybrid arch: 24 layers = 13 gated short convolutions + 5 sliding-window
+    # + 6 global attention → only 6 layers hold growing KV, so 256K context is
+    # cheap. Also the base of the LFM3-VL/Audio/Omni family.
+    # Requires llama.cpp >= b11960 (cg pin 39febd2ad, arch `lfm3`): older builds
+    # reject the GGUF outright.
+    # MEASURED 2026-10-28 (RTX 3090 Ti 24 GB, shared desktop, proxy mode,
+    # 150 runs): 144/150 completion (96%), 129/150 accuracy (86%), 24 min wall.
+    #   - Ties MiniCPM5-2B on accuracy (128/150, 85%) at 2/3 the params and 2x ctx,
+    #     but loses on completion and wall time (~2x slower end-to-end). Big wins
+    #     where MiniCPM5 is weak: inconsistent_api_recovery 100/100 vs 40/80,
+    #     conditional_routing 100/100 vs 60/100. Losses: error_recovery 60/60 vs
+    #     100/80, grounded_synthesis 60/20 vs 60/80.
+    #   - 4 of the 6 completion misses are ONE quirk, not reasoning: after a tool
+    #     raises TypeError, string args come back double-quoted ("\"0010\"").
+    #     Direct calls render correctly — retry-context drift. 2 are
+    #     _ToolCallExhausted.
+    #   - 256K ctx verified: -c 262144 -ctk q8_0 -ctv q8_0 boots clean, ~4.5 GB
+    #     server VRAM (6.7 GB with a 2.2 GB desktop baseline). ~150 tok/s decode.
+    # Card caveat (validated): "not recommended for agentic coding or complex
+    # multi-step reasoning" — treat as a long-context tiny tier, not a coder.
+    # Card sampling (agentic): temp 0.1, top_k 50, repeat_penalty 1.1.
+    # The QAD-Q4_0 file is the quantization-aware-distilled 4-bit build (≈1 GB);
+    # it is NOT profiled — untested on the harness.
+    "LFM3-1.7B-Q8_0": ModelProfile(
+        name="LFM3-1.7B-Q8_0",
+        family="LFM3",
+        quant="Q8_0",
+        file_size_gb=1.72,
+        vram_required_gb=5.0,  # measured ~4.5 GB at full 256K ctx (q8_0 KV, 6 KV-holding layers)
+        context_tokens=262144,
+        architecture="dense",
+        active_params_b=1.73,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.1, "top_k": 50, "repeat_penalty": 1.1},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1",
+                     "--temp", "0.1", "--top-k", "50", "--repeat-penalty", "1.1"],
+    ),
     "Qwen3.5-9B-UD-Q4_K_XL": ModelProfile(
         name="Qwen3.5-9B-UD-Q4_K_XL",
         family="Qwen3.5",

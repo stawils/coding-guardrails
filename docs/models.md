@@ -15,6 +15,7 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Flint** | UD-Q3_K_XL | 18.49 GB | 19.9 GB | **128K** (q8_0 KV) | 2.5B | MoE (39.8B total) | ~107 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
 | **MiniCPM5-2B** | Q4_K_M | 1.56 GB | ~3.0 GB | **131K** | 2.52B | Dense | ~182 tok/s |
+| **LFM3-1.7B** | Q8_0 | 1.72 GB | ~4.5 GB | **256K** (q8_0 KV) | 1.73B | Dense (tri-hybrid) | ~150 tok/s |
 
 ## Forge eval results (150 runs, proxy mode)
 
@@ -33,6 +34,7 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 | **Flint** | 145/150 (96.7%) | 135/150 (90%) — fastest 40B-class run (24 min); tool_selection 40% (prose instead of respond()) | 2026-10-22_144116Z |
 | **LFM2.5-2.6B** | 139/150 (92.7%) | 100/140 (71%) — card caveat confirmed | 2026-08-08_153811Z |
 | **MiniCPM5-2B** | **150/150 (100%)** | **128/150 (85%)** — tool_selection 5/5 (fixes LFM2.5 0/5); data_gap_recovery_extended 100% | 2026-09-08_111510Z |
+| **LFM3-1.7B** | 144/150 (96%) | 129/150 (86%) — ties MiniCPM5 on accuracy at 2/3 the params and 2x ctx, but ~2x wall time; 4 of 6 misses are one retry-context quoting quirk | 2026-10-28_143636Z |
 
 Shared weakness across the smaller models: data-heavy recovery scenarios
 (`data_gap_recovery_extended`, `argument_transformation`, `inconsistent_api_recovery`,
@@ -73,6 +75,43 @@ $LLAMA \
   -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 # ~182 tok/s, ~3 GB VRAM. Reasoning model: keep max_tokens generous.
+```
+
+## LFM3-1.7B (Q8_0 — 256K long-context tiny tier, LFM Open License v1.0)
+
+- Liquid AI **LFM3-1.7B** (family released 2026-10-21+, first tri-hybrid generation).
+  **1.73B dense params**, 128K vocab, 16 languages, native 262144 (256K) context.
+- **Tri-hybrid architecture**: 24 layers = 13 gated short convolutions + 5 sliding-window
+  attention + 6 global attention. Only the 6 global layers hold growing KV, so **the full
+  256K context costs ~4.5 GB of VRAM total** (weights 1.72 GB + q8_0 KV).
+- **Requires llama.cpp ≥ b11960** (`LLM_ARCH_LFM3`; cg pin `39febd2ad`). Older builds reject
+  the GGUF. Tool calling works through `--jinja` (template ships in the GGUF); the model emits
+  `<tool_call><function=…>` blocks that llama-server forms into clean OpenAI `tool_calls`.
+- **Measured 2026-10-28** (proxy mode, 150 runs, RTX 3090 Ti): **144/150 completion (96%),
+  129/150 accuracy (86%), 24 min wall, ~150 tok/s**. Head-to-head with MiniCPM5-2B:
+  wins `inconsistent_api_recovery` **100/100** (vs 40/80) and `conditional_routing` 100/100
+  (vs 60/100), `data_gap_*` 100%; loses `error_recovery` 60/60 (vs 100/80),
+  `grounded_synthesis` 60/20 (vs 60/80), `sequential_reasoning_stateful` 60 (vs 100).
+- ⚠️ **The 6 misses are mostly one quirk, not reasoning**: after a tool raises `TypeError`,
+  string arguments come back double-quoted — `count: "0010"` re-sent as `"\"0010\""`.
+  Direct calls render correctly, so it is retry-context drift. The other 2 are
+  `_ToolCallExhausted` on `sequential_reasoning_stateful`.
+- ⚠️ **Card caveat (validated)**: "not recommended for agentic coding or complex multi-step
+  reasoning" — use it as a long-context tiny tier, not as a coding worker.
+- Card sampling (agentic): temp 0.1, top_k 50, repeat_penalty 1.1 (baked into boot flags).
+  For math/science the card prefers temp 1.0 / top_p 0.95 / top_k 20.
+- The `LFM3-1.7B-QAD-Q4_0.gguf` (quantization-aware-distilled 4-bit, ≈1 GB) is downloaded but
+  **not profiled** — untested on the harness.
+
+### LFM3-1.7B boot command
+```bash
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/LFM3-1.7B-GGUF/LFM3-1.7B-Q8_0.gguf \
+  -c 262144 -ngl 99 --host 0.0.0.0 --port 8080 \
+  --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1 \
+  --temp 0.1 --top-k 50 --repeat-penalty 1.1 -v
+# ~150 tok/s, ~4.5 GB VRAM at the full 256K ctx.
+# Manager equivalent: cg server start -m LFM3-1.7B-Q8_0
 ```
 
 ## LFM2.5-2.6B (BF16 — maximum precision, 128K context)

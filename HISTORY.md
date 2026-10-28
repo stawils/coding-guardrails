@@ -1,5 +1,26 @@
 # Session History
 
+## 2026-10-28 — v0.24.0: LFM3-1.7B (256K long-context tiny tier) + llama.cpp pin bump
+- **Pin bump**: `d77256999` → `39febd2ad` (llama.cpp 0.8.0-dev) for `LLM_ARCH_LFM3`
+  (#31252 text+VL, #31257 audio+omni, #31283 video input). Rebuilt, `cg server version`
+  matches the pin. Smoke-tested through `cg server start`: Flint (MoE + q8_0 KV @128K) and
+  LFM3-1.7B (256K ctx) both emit clean tool calls. 747 unit tests pass.
+- **New profile `LFM3-1.7B-Q8_0`** — tri-hybrid 1.73B, 256K ctx verified at ~4.5 GB VRAM
+  (only 6 of 24 layers hold KV), ~150 tok/s, temp 0.1 / top_k 50 / rp 1.1.
+- **Full Forge 30-scenario eval (150 runs, proxy mode, 24 min): 144/150 (96%) completion,
+  129/150 (86%) accuracy.** Ties MiniCPM5-2B (85%) at 2/3 the params and 2x the context, but
+  ~2x the wall time (1444s vs 766s). Wins where MiniCPM5 is weak (inconsistent_api_recovery
+  100/100 vs 40/80; conditional_routing 100/100 vs 60/100; data_gap_* 100%); loses
+  error_recovery (60/60 vs 100/80) and grounded_synthesis (60/20 vs 60/80).
+- **Root cause of 4 of the 6 misses**: after a tool raises `TypeError`, string args are
+  re-emitted double-quoted (`count: "0010"` → `"\"0010\""`). Direct calls render
+  correctly — retry-context drift, not reasoning failure. The other 2 are
+  `_ToolCallExhausted` on `sequential_reasoning_stateful`. Card caveat ("not recommended for
+  agentic coding") holds; added as a long-context tiny tier, NOT a coding worker.
+- Artifacts: `eval/runs/2026-10-28_143636Z/`; docs/models.md + CLAUDE.md updated.
+- Qwen3.8-27B (systemd default) was NOT re-smoke-tested on this pin — its GGUF is absent on
+  the test host.
+
 ## 2026-09-11 — Thinking mode allowed safely + reliably on the plain path
 - Plain (no-tool) requests previously dropped captured thinking entirely (Forge parses
   reasoning_content only for tool-call responses) and could return EMPTY content when

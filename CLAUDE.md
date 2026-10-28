@@ -255,6 +255,23 @@ coding-guardrails server start -m LFM2.5-2.6B-BF16
 coding-guardrails server start -m MiniCPM5-2B-Q4_K_M
 #   (equivalent raw llama-server: -c 131072 --temp 1.0 --top-p 0.95 -np 1 --jinja)
 
+# LFM3-1.7B Q8_0 (long-context tiny tier — 256K ctx, ~4.5 GB VRAM, ~150 tok/s)
+#   Liquid AI, released 2026-10-21+, LFM Open License v1.0. Tri-hybrid arch (24 layers:
+#   13 gated short-conv + 5 sliding-window + 6 global attn) → only 6 layers hold KV, so the
+#   FULL 256K context costs ~4.5 GB total. Requires llama.cpp >= b11960 (`lfm3` arch); cg's
+#   pin 39febd2ad has it, older builds reject the GGUF.
+#   Full 150-run proxy Forge eval 2026-10-28 (v0.24.0): 144/150 completion (96%), 129/150
+#   accuracy (86%), 24 min wall. Ties MiniCPM5-2B on accuracy at 2/3 the params and 2x ctx,
+#   but ~2x the wall time. Wins where MiniCPM5 is weak: inconsistent_api_recovery 100/100
+#   (vs 40/80), conditional_routing 100/100 (vs 60/100). Loses error_recovery (60/60 vs
+#   100/80), grounded_synthesis (60/20 vs 60/80). 4 of the 6 misses are ONE quirk: after a
+#   tool raises TypeError, string args come back double-quoted ("0010" -> "\"0010\"").
+#   Card caveat (confirmed): not recommended for agentic coding. Use it for long-context
+#   tiny-tier work, not as a coding worker. Card sampling: temp 0.1, top_k 50, rp 1.1.
+coding-guardrails server start -m LFM3-1.7B-Q8_0
+#   (equivalent raw llama-server: -c 262144 -ctk q8_0 -ctv q8_0 -np 1 --jinja
+#    --temp 0.1 --top-k 50 --repeat-penalty 1.1)
+
 # Session 2: Guardrails proxy (with config for increased budgets)
 source .venv/bin/activate
 coding-guardrails serve \
@@ -270,7 +287,7 @@ coding-guardrails serve \
 
 ### Notes
 
-- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-01 to `d77256999`** (was `5a6a0dd7e`, 2026-06-26) for the Flint MoE arch (`LLM_ARCH_FLINT`, upstream #30928), which also carries the Gemma 4 tool-call fix, Qwen3.5/3.6/3.8, Ornith, LFM2.5 and MiniCPM5 support. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The rebuild was smoke-tested against the Qwen3.8-27B default (MTP + mmproj) on 2026-11-01.
+- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-02 to `39febd2ad` (llama.cpp 0.8.0-dev)** (was `d77256999`) for the LFM3 tri-hybrid family (`LLM_ARCH_LFM3`, upstream #31252/#31257/#31283 — text, VL, audio, omni + video input), on top of the Flint MoE arch (`LLM_ARCH_FLINT`, #30928), the Gemma 4 tool-call fix, and Qwen3.5/3.6/3.8, Ornith, LFM2.5, MiniCPM5 support. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The 2026-11-02 rebuild was smoke-tested through `cg server start` against Flint (MoE + q8_0 KV @128K, clean tool call) and LFM3-1.7B (256K ctx, clean tool call); the Qwen3.8-27B default GGUF was absent on the test host, so it was NOT re-verified on this pin.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
 - Qwen3.6-27B: max reliable ctx on the 24 GB card is **48K with q8_0 KV** (UD-Q4_K_XL). 56K+ needs a
@@ -337,6 +354,10 @@ only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay we
 accuracy, 24 min wall** — the fastest 40B-class run; all compaction_chain + data_gap_*
 100%, but tool_selection 40% (prose instead of respond()) and argument_transformation
 ~40-60%.
+**LFM3-1.7B (added v0.24.0 as the long-context tiny tier): 144/150 (96%) completion,
+129/150 (86%) accuracy, 24 min wall** — ties MiniCPM5-2B on accuracy at 2/3 the params with
+2x the context (256K @ ~4.5 GB), but ~2x the wall time and worse completion; 4 of its 6
+misses are a retry-context double-quoting quirk on string args, not reasoning.
 
 **Eval-harness sync (2026-09-08, v0.20.1):** the vendored `tests/eval` harness was 49 commits
 stale (v0.7.0-era); its `CountingClientWrapper` lacked the `passthrough`/`inbound_anthropic_body`/
