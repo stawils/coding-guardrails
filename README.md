@@ -53,8 +53,8 @@ policy. Neither requires rewriting your agent.
 ```bash
 pip install coding-guardrails
 
-coding-guardrails server build                                          # builds cg's llama-server (pinned commit; includes the Gemma 4 tool-call fix)
-coding-guardrails server start --model Qwen3.8-27B-UD-Q3_K_XL           # LLM backend on :8080 (default — measured 100% completion / 99% accuracy)
+coding-guardrails server build                                          # builds cg's llama-server (pinned commit: llama.cpp 0.9.0-dev + DSpine draft support)
+coding-guardrails server start --model Qwen3.8-27B-UD-Q3_K_XL           # backend on :8080 (default — DSpine draft model attached; 100% completion / 99% accuracy)
 coding-guardrails serve --backend-url http://localhost:8080 \
   --model Qwen3.8-27B-UD-Q3_K_XL --port 8081                            # proxy on :8081
 
@@ -125,15 +125,19 @@ Every number below is from a recorded run — timestamps and run IDs included �
 and the eval is reproducible (`eval/scripts/run_forge_eval.py`, proxy mode).
 
 All numbers are recorded runs on the same local GPU (proxy mode). The
-Qwen3.8-27B row is **v0.17.0** (2026-08-15); the rest are the **v0.16.1**
-re-eval (2026-08-07/08) after the respond() fix:
+Qwen3.8-27B row is **v0.26.0** (2026-11-09, shipped profile with the DSpine
+draft model); the rest are the **v0.16.1** re-eval (2026-08-07/08) after the
+respond() fix:
 
 | Model | Completion | Accuracy | Run |
 |---|---|---|---|
-| **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** | `2026-08-15_000804Z` |
+| **Qwen3.8-27B (default)** | **150/150 (100%)** | **149/150 (99%)** | `2026-11-09_101147Z` |
 | Qwen3.5-9B | **150/150 (100%)** | 138/150 (92%) | `2026-08-08_142633Z` |
 | Ornith-1.0-9B | **150/150 (100%)** | **143/150 (95%)** | `2026-08-08_144837Z` |
 | Qwen3.6-27B | **149/150 (99.3%)** | 141/150 (94%) | `2026-08-07_151927Z` |
+| Flint 39.8B-A2.5B | 145/150 (96.7%) | 135/150 (90%) | `2026-10-22_144116Z` |
+| MiniCPM5-2B | **150/150 (100%)** | 128/150 (85%) | `2026-09-08_111510Z` |
+| LFM3-1.7B | 144/150 (96%) | 129/150 (86%) | `2026-10-28_143636Z` |
 | LFM2.5-2.6B | 139/150 (92.7%) | 100/140 (71%) | `2026-08-08_153811Z` |
 
 **What the numbers mean.** *Completion* = the run finished through the terminal
@@ -190,13 +194,49 @@ defaults, boot flags, VRAM requirements, and context limits per GGUF.
 
 | Model | Size | VRAM | Context | Speed | Eval | When to use |
 |---|---|---|---|---|---|---|
-| **Qwen3.8-27B** ⭐ | 13.44 GB | 18.2 GB | **128K** | ~68 tok/s (MTP) | **100% / 99% acc** | **Default.** Best measured agent on the harness; vision-capable |
+| **Qwen3.8-27B** ⭐ | 13.44 GB | 17.8 GB | **120K** | **~84 tok/s** (DSpine) | **100% / 99% acc** | **Default.** Best measured agent on the harness; vision-capable |
 | **Qwen3.5-9B** | 5.7 GB | 18 GB | 200K | ~53 tok/s (MTP) | 100% / 92% acc | Fast fallback; longest context (200K) |
 | **Ornith-1.0-9B** | 9.5 GB | 18 GB | 200K | ~50 tok/s | 100% / **95% acc** | Best 9B accuracy; reasoning model |
 | **Qwen3.6-27B** | 17.9 GB | 19.5 GB | **48K** | ~20-30 tok/s | 99.3% / 94% acc | Highest capability when 48K suffices |
 | **Gemma 4 26B A4B QAT** | 14.25 GB | 19.8 GB | 200K | ~40+ tok/s | — | Highest raw capability; prone to thinking loops |
 | **LFM2.5-2.6B** | 5.4 GB | 9 GB | 128K | ~113 tok/s | 92.7% / 71% acc | Bounded tasks only (card caveat confirmed) |
 | **MiniCPM5-2B** | 1.56 GB | ~3.0 GB | **131K** | ~182 tok/s | 100% / 85% acc | Fastest edge tier; replaces LFM2.5 (better tool-select) |
+
+### Speculative decoding: DSpine (why the default got ~2x faster)
+
+The Qwen3.8-27B default ships a draft model. [DSpine](https://arxiv.org/abs/2609.36173)
+(Tencent Hunyuan) is a five-layer parallel drafter that reads hidden states from
+five target layers, drafts a 16-token block, and injects each position's predicted
+predecessor code into its successor at every layer. It rides llama.cpp's existing
+`draft-dflash` implementation, so a profile only has to name the drafter:
+
+```python
+# models/profiles.py
+drafter="Qwen3.8-27B-DSpine-b16-Q4_K_M",   # key into server/sources.py DRAFTERS
+spec_n_max=4,                              # tokens drafted per verify step
+```
+
+`cg server download <profile>` fetches the drafter with the target; `cg server start`
+appends `-md … --spec-type draft-dflash --spec-draft-n-max 4` and budgets the
+drafter's VRAM in the gate. A missing drafter logs a warning and boots the target
+without speculation rather than failing.
+
+Measured 2026-11-09 on an RTX 3090 Ti (UD-Q3_K_XL target, same harness both ways):
+
+| | wall time (150 runs) | completion | correctness |
+|---|---:|---:|---:|
+| no speculation | 3846.6 s (64.1 min) | 150/150 | 146/150 (97%) |
+| **DSpine, n-max 4** | **2030.7 s (33.8 min)** | 150/150 | **149/150 (99%)** |
+
+Short-context decode goes from **46.3 to 94.5 tok/s** (n-max 4); code and math hit
+~120 tok/s. `--spec-draft-n-max` is hardware dependent — 4 is the peak on a Q3
+target, while the model card's 15 targets a Q4_K_M/3090 setup; sweep it yourself
+with `llama-benchy` or the eval before trusting a number.
+
+> DSpine is not upstream in llama.cpp yet, so cg's pin points at a fork
+> (`PINNED_REPO` in `server/version.py`) whose branch is upstream master plus one
+> audited commit. Everything else in the pin is stock llama.cpp; switch the repo
+> back to `ggml-org` once DSpine lands upstream.
 
 ### Vision (multimodal)
 
@@ -240,9 +280,11 @@ down.
   256`) is sized to fit the fragmented state, not the ideal one.
 - **24 GB VRAM is the practical ceiling.** Qwen3.6-27B is capped at 48K
   context (56K+ needs a single KV allocation the fragmented allocator can't
-  provide). Qwen3.8-27B (UD-Q3_K_XL + q4_0 KV + MTP + mmproj) runs **128K on
-  the same card** — its hybrid architecture keeps the KV cache cheap. 200K
-  context is still only realistic for the 9B-class models.
+  provide). Qwen3.8-27B (UD-Q3_K_XL + q4_0 KV + DSpine draft) runs **120K on
+  the same card** (128K at 3 drafted tokens) — its hybrid architecture keeps
+  the KV cache cheap. 200K context is still only realistic for the 9B-class
+  models. A speculative drafter also costs ~150 MB of recurrent state per
+  drafted token, which comes out of that same budget.
 - **Local models are local models.** The eval tables above are the honest
   picture: excellent at tool plumbing, weak at multi-source synthesis.
 - **The lint gate runs on every edited file.** If you don't lint your code,
@@ -259,7 +301,7 @@ limits; workspace root for path safety; secret patterns. Full reference in
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 692 tests (~28s)
+pytest tests/unit/ -q          # 794 tests (~25s)
 python eval/scripts/run_forge_eval.py --mode proxy --runs 5   # the eval behind the tables above
 ```
 

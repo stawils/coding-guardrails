@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 781 tests (~24s)
+pytest tests/unit/ -q          # 794 tests (~25s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -347,11 +347,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 781 tests
+pytest tests/unit/ -q              # All 794 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 781 tests must pass before committing.
+All 794 tests must pass before committing.
 
 ## Eval
 
@@ -414,7 +414,7 @@ files — re-sync `tests/eval` from forge upstream after any vendor refresh.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 781 unit tests must pass
+- All 794 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -445,7 +445,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 781 tests MUST pass
+pytest tests/unit/ -q          # All 794 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.
