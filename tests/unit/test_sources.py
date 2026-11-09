@@ -2,7 +2,14 @@
 
 import pytest
 
-from coding_guardrails.server.sources import ModelSource, get_source, SOURCES
+from coding_guardrails.server.sources import (
+    DRAFTERS,
+    SOURCES,
+    DrafterSource,
+    ModelSource,
+    get_drafter,
+    get_source,
+)
 
 
 class TestModelSourceDefaults:
@@ -54,3 +61,34 @@ class TestSOURCESIntegrity:
     def test_source_count(self) -> None:
         """Verify the number of registered sources."""
         assert len(SOURCES) > 0
+
+
+class TestDrafterSources:
+    """Drafters are speculative-decoding GGUFs paired with a target profile."""
+
+    def test_defaults_and_lookup(self) -> None:
+        spec = DrafterSource(
+            repo_id="a/b", filename="d.gguf", spec_type="draft-dflash", n_max=4,
+            vram_gb=1.0,
+        )
+        assert spec.license == ""
+        assert get_drafter("nope") is None
+
+    def test_every_drafter_is_well_formed(self) -> None:
+        for name, spec in DRAFTERS.items():
+            assert spec.repo_id, f"repo_id empty for {name}"
+            assert spec.filename.endswith(".gguf"), f"bad filename for {name}"
+            assert spec.spec_type.startswith("draft-"), f"bad spec_type for {name}"
+            assert 1 <= spec.n_max <= 32, f"n_max out of range for {name}"
+            assert 0 < spec.vram_gb < 8, f"implausible vram_gb for {name}"
+            assert get_drafter(name) is spec
+
+    def test_profile_drafter_references_a_known_entry(self) -> None:
+        from coding_guardrails.models.profiles import PROFILES
+
+        for profile in PROFILES.values():
+            if profile.drafter is None:
+                continue
+            assert profile.drafter in DRAFTERS, (
+                f"{profile.name} references unregistered drafter {profile.drafter!r}"
+            )

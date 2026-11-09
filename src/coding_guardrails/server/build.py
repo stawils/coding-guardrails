@@ -19,11 +19,11 @@ from coding_guardrails.server.paths import (
     run_dir,
     source_dir,
 )
-from coding_guardrails.server.version import PINNED_COMMIT, PINNED_SHORT
+from coding_guardrails.server.version import PINNED_COMMIT, PINNED_REPO, PINNED_SHORT
 
 logger = logging.getLogger("coding_guardrails.server.build")
 
-REPO_URL = "https://github.com/ggml-org/llama.cpp.git"
+REPO_URL = PINNED_REPO
 
 
 def _detect_cuda() -> bool:
@@ -37,9 +37,18 @@ def _detect_cuda() -> bool:
 
 
 def _clone_or_update(src: Path) -> None:
-    """Ensure ``src`` is a shallow checkout at the pinned commit."""
+    """Ensure ``src`` is a shallow checkout at the pinned commit.
+
+    The origin URL is re-pointed on every run, so a checkout cloned before the
+    pin moved to a fork (e.g. the DSpine branch) picks up the new remote instead
+    of failing to fetch an unknown commit.
+    """
     if (src / ".git").exists():
         logger.info("Updating existing checkout -> %s", PINNED_SHORT)
+        subprocess.run(
+            ["git", "-C", str(src), "remote", "set-url", "origin", REPO_URL],
+            check=True,
+        )
         subprocess.run(
             ["git", "-C", str(src), "fetch", "--depth", "1", "origin", PINNED_COMMIT],
             check=True,

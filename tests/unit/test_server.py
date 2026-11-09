@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -10,6 +11,8 @@ import pytest
 
 from coding_guardrails.server import paths, version, sources, build, launcher
 from coding_guardrails.models import registry
+from coding_guardrails.models.profiles import get_profile
+from coding_guardrails.server import download
 
 
 # ───────────────────────── paths ─────────────────────────
@@ -171,6 +174,65 @@ class TestBuildArgv:
             launcher.build_argv("nope", model_path=tmp_path / "m.gguf")
 
 
+class TestDrafterArgv:
+    """A profile that declares a speculative drafter gets -md + spec flags."""
+
+    PROFILE = "Qwen3.8-27B-UD-Q3_K_XL"
+
+    def _place_drafter(self, monkeypatch, tmp_path, present=True):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(registry, "FALLBACK_CACHE_DIRS", [])
+        spec = sources.get_drafter("Qwen3.8-27B-DSpine-b16-Q4_K_M")
+        path = paths.models_dir() / spec.repo_id.split("/")[-1] / spec.filename
+        if present:
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"x")
+        return spec, path
+
+    def test_flags_added_when_drafter_present(self, monkeypatch, tmp_path):
+        spec, path = self._place_drafter(monkeypatch, tmp_path)
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        argv = launcher.build_argv(self.PROFILE, model_path=gguf, ngl=42)
+
+        assert "-md" in argv and argv[argv.index("-md") + 1] == str(path)
+        assert argv[argv.index("--spec-type") + 1] == spec.spec_type
+        assert argv[argv.index("--spec-draft-n-max") + 1] == "4"
+        assert argv[argv.index("--spec-draft-ngl") + 1] == "42"
+        # the drafter's own KV is quantized independently of the target's
+        assert argv[argv.index("--spec-draft-type-k") + 1] == "q8_0"
+        # the target's MTP flag is gone: DSpine replaces the built-in head
+        assert "draft-mtp" not in argv
+
+    def test_spec_n_max_override_wins(self, monkeypatch, tmp_path):
+        self._place_drafter(monkeypatch, tmp_path)
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        spied = sources.get_drafter("Qwen3.8-27B-DSpine-b16-Q4_K_M")
+        monkeypatch.setattr(
+            "coding_guardrails.models.profiles.PROFILES",
+            {
+                self.PROFILE: dataclasses.replace(
+                    get_profile(self.PROFILE), spec_n_max=2
+                )
+            },
+        )
+        argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert argv[argv.index("--spec-draft-n-max") + 1] == "2"
+        assert spied.n_max == 4  # the shared default is untouched
+
+    def test_missing_drafter_warns_and_boots_without_speculation(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        self._place_drafter(monkeypatch, tmp_path, present=False)
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        with caplog.at_level("WARNING"):
+            argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "-md" not in argv and "--spec-type" not in argv
+        assert any("without speculative" in r.message for r in caplog.records)
+
+
 class TestLauncherLifecycle:
     def _fake_binary(self, tmp_path, lifetime=30):
         """A real tiny executable that sleeps (so pid/is_running behave truthfully)."""
@@ -269,6 +331,54 @@ class TestBuild:
         assert any("remote add origin" in j for j in joined)
         assert any("fetch --depth 1" in j and version.PINNED_COMMIT in j for j in joined)
         assert any("checkout FETCH_HEAD" in j for j in joined)
+
+    def test_pin_repo_is_the_fetch_origin(self):
+        """The build fetches from the pin's repo — currently the DSpine fork."""
+        assert build.REPO_URL == version.PINNED_REPO
+        assert version.PINNED_REPO.endswith("llama.cpp.git")
+
+    def test_existing_checkout_origin_is_repointed(self, monkeypatch, tmp_path):
+        """A checkout cloned from ggml-org must follow the pin to the fork."""
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        src = paths.source_dir()
+        (src / ".git").mkdir(parents=True)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(build.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or _ok())
+        build._clone_or_update(src)
+        joined = [" ".join(c) for c in calls]
+        assert any(
+            j.endswith(f"remote set-url origin {version.PINNED_REPO}") for j in joined
+        ), joined
+        assert any(version.PINNED_COMMIT in j and "fetch" in j for j in joined)
+
+
+class TestDownload:
+    def test_drafter_downloaded_with_its_profile(self, monkeypatch, tmp_path):
+        """cg server download <profile> also fetches the speculative drafter."""
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        fetched: list[tuple[str, str]] = []
+
+        def fake_fetch(repo_id, filename, dest):
+            fetched.append((repo_id, filename))
+            return dest
+
+        monkeypatch.setattr(download, "_fetch", fake_fetch)
+        download.download("Qwen3.8-27B-UD-Q3_K_XL")
+        names = [f for _, f in fetched]
+        assert "Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf" in names
+        # the target model is still fetched
+        assert any(n.startswith("Qwen3.8-27B-UD") for n in names)
+
+    def test_drafter_target_path_is_under_models_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        p = download.drafter_target_path("Qwen3.8-27B-DSpine-b16-Q4_K_M")
+        assert paths.models_dir() in p.parents
+        assert p.name == "Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf"
+
+    def test_unknown_drafter_raises(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        with pytest.raises(KeyError):
+            download.drafter_target_path("nope")
 
 
 class _R:

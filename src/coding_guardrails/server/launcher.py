@@ -15,9 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from coding_guardrails.models.profiles import get_profile
+from coding_guardrails.models import registry
 from coding_guardrails.server.paths import (
     binary_path,
     log_file,
+    models_dir,
     pid_file,
     run_dir,
 )
@@ -99,6 +101,71 @@ def _find_mmproj(model_path: Path) -> Path | None:
     return None
 
 
+def drafter_path(repo_id: str, filename: str) -> Path:
+    """Where a drafter GGUF lives in cg's cache (mirrors download.target_path)."""
+    return models_dir() / repo_id.split("/")[-1] / filename
+
+
+def _resolve_drafter(repo_id: str, filename: str) -> Path | None:
+    """Find a drafter GGUF: its cg-cache slot first, then the read-only fallbacks."""
+    expected = drafter_path(repo_id, filename)
+    if expected.exists():
+        return expected
+    for cache_dir in registry.FALLBACK_CACHE_DIRS:
+        if not cache_dir.exists():
+            continue
+        for candidate in cache_dir.rglob(filename):
+            return candidate
+    return None
+
+
+def _drafter_argv(profile, *, ngl: int) -> list[str]:
+    """Speculative-decoding flags for a profile that declares a drafter.
+
+    A missing drafter GGUF is a warning, not a failure: the backend still
+    serves the target model, just without speculation. Refusing to boot the
+    always-on backend because an optional speed artifact is absent would take
+    the whole tier down.
+    """
+    from coding_guardrails.server.sources import get_drafter
+
+    spec = get_drafter(profile.drafter)
+    if spec is None:
+        logger.warning(
+            "profile %r references unknown drafter %r — serving without "
+            "speculative decoding",
+            profile.name,
+            profile.drafter,
+        )
+        return []
+    path = _resolve_drafter(spec.repo_id, spec.filename)
+    if path is None:
+        logger.warning(
+            "drafter GGUF %s not found — serving %r without speculative "
+            "decoding. Run: cg server download %s",
+            spec.filename,
+            profile.name,
+            profile.name,
+        )
+        return []
+    n_max = profile.spec_n_max or spec.n_max
+    logger.info("Speculative decoding: %s (drafts %d)", spec.filename, n_max)
+    return [
+        "-md",
+        str(path),
+        "--spec-type",
+        spec.spec_type,
+        "--spec-draft-n-max",
+        str(n_max),
+        "--spec-draft-ngl",
+        str(ngl),
+        "--spec-draft-type-k",
+        "q8_0",
+        "--spec-draft-type-v",
+        "q8_0",
+    ]
+
+
 def build_argv(
     profile_name: str,
     *,
@@ -144,6 +211,8 @@ def build_argv(
     mmproj = _find_mmproj(gguf)
     if mmproj is not None:
         argv += ["--mmproj", str(mmproj)]
+    if getattr(profile, "drafter", None):
+        argv += _drafter_argv(profile, ngl=ngl)
     if extra:
         argv.extend(extra)
     return argv

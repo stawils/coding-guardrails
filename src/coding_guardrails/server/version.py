@@ -17,13 +17,22 @@ from coding_guardrails.server.paths import binary_path, source_dir
 
 logger = logging.getLogger("coding_guardrails.server.version")
 
-#: Exact commit cg builds against. Latest master (2026-11-01+): keeps the
-#: gemma-4 tool-call fix, the dense qwen35 arch (Ornith-1.0-9B), the Flint MoE
-#: arch (`LLM_ARCH_FLINT`, #30928) plus the muse-glimmer/laguna archs, and adds
-#: the LFM3 tri-hybrid family (`lfm3`, #31252 / #31257 / #31283 — text, VL,
-#: audio, omni + video input). Build 2026-11-02.
-PINNED_COMMIT = "39febd2adb947b70da35e95f9351b3bf58ad170a"
-PINNED_SHORT = "39febd2ad"
+#: Upstream repo the pin is fetched from. Currently a **fork**: DSpine
+#: speculative decoding (Tencent Hunyuan, arXiv 2609.36173) is not upstream
+#: yet. The fork's `dspine` branch is ggml-org master + exactly one commit
+#: (`dflash : add DSpine draft model support`, 474 lines: gguf tensor names,
+#: the code-bridge graph, and the serial last-write refinement in
+#: src/models/dflash.cpp — no network/shell/file-write additions).
+#: Switch back to https://github.com/ggml-org/llama.cpp.git once upstream
+#: lands DSpine; the only thing cg depends on is that commit being an ancestor.
+PINNED_REPO = "https://github.com/Ajay9o9/llama.cpp.git"
+
+#: Exact commit cg builds against. ggml-org master 0.9.0-dev (2026-11-08) +
+#: the DSpine commit. Keeps everything the previous pin carried (gemma-4
+#: tool-call fix, qwen35/flint/lfm3 archs) and adds DSpine draft support.
+#: Build 2026-11-09.
+PINNED_COMMIT = "d493f841b20241606c47a4e0537d3c786b5cf50b"
+PINNED_SHORT = "d493f84"
 
 
 def installed_commit() -> str | None:

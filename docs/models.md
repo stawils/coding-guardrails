@@ -7,7 +7,7 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
-| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (MTP) | 13.44 GB | 18.2 GB | **128K** (q4_0 KV) | 27B | Dense (hybrid) | ~68 tok/s |
+| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (**DSpine** draft) | 13.44 GB | 17.8 GB | **120K** (q4_0 KV) | 27B | Dense (hybrid) | **~84 tok/s** |
 | **Qwen3.6-27B** | UD-Q4_K_XL | 17.9 GB | 19.5 GB | **48K** (q8_0 KV) | 27B | Dense (hybrid) | ~20-30 tok/s |
 | **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
@@ -28,6 +28,7 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 | Model | Completion | Accuracy | Run |
 |---|---|---|---|
 | **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** — best | 2026-08-15_000804Z |
+| **Qwen3.8-27B + DSpine** | **150/150 (100%)** | **149/150 (99%)** | 2026-11-09_081753Z |
 | **Qwen3.5-9B** | **150/150 (100%)** | 138/150 (92%) | 2026-08-08_142633Z |
 | **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** | 2026-08-08_144837Z |
 | **Qwen3.6-27B** | **149/150 (99.3%)** | 141/150 (94%) | 2026-08-07_151927Z |
@@ -166,27 +167,33 @@ $LLAMA \
   on small buffers, the driver's memory is fragmented (many prior large load/unload cycles). A reboot
   clears it; 56K-64K q8_0 KV becomes loadable again in a fresh state.
 
-## Qwen3.8-27B (128K context on 24 GB, MTP)
+## Qwen3.8-27B (120K context on 24 GB, DSpine draft)
 
-- **Released Aug 2026**, Apache-2.0. Same `qwen3_5` hybrid arch as Qwen3.5-9B — MTP
-  speculative decoding works (`--spec-type draft-mtp`).
-- **Measured 2026-08-15 (Forge eval, proxy mode, 150 runs): 150/150 completion (100%),
-  148/150 correctness (99%) — best result ever on this harness** (vs Qwen3.5-9B
-  150/150/100% completion, 92% correctness; Qwen3.6-27B 99.3%/94%). Scored 100% on
-  every family smaller models fail: `tool_selection`, `data_gap_recovery_extended`,
-  `argument_transformation`, `inconsistent_api_recovery`, `grounded_synthesis`. Only 2
-  misses total (compaction_chain_p1/p2, 4/5 each).
-  Full analysis: [../plans/2026-08-05_qwen3.8-27b-research.md](../plans/2026-08-05_qwen3.8-27b-research.md).
+- **Released Aug 2026**, Apache-2.0. Same `qwen3_5` hybrid arch as Qwen3.5-9B.
+- **Speculative decoding: DSpine, not MTP** (since v0.26.0). [DSpine](https://arxiv.org/abs/2609.36173)
+  (Tencent Hunyuan) is a 5-layer parallel drafter that reads hidden states from five
+  target layers (1/16/31/46/61), drafts a 16-token block, and injects each position's
+  predicted predecessor *code* into its successor at every layer. It rides llama.cpp's
+  existing `draft-dflash` implementation, so cg only sets `-md` + `--spec-type draft-dflash`.
+- **Measured 2026-11-09 on this box (RTX 3090 Ti, UD-Q3_K_XL target):**
+  - short-prompt decode **46.3 → 94.5 tok/s** (n-max 4); production config at 120K ctx
+    measures **84 tok/s** average across code/math/tool/prose/summarize.
+  - **`--spec-draft-n-max 4`, not 15.** With a Q3 target, verification is relatively
+    expensive: n=4 peaks, n=15 is the same speed but costs 1.7 GB of context. n=2 and
+    n=7 are both slower. (On the porter's RTX 3090 + Q4_K_M target, n=15 wins — the
+    optimum is a function of how cheaply *your* card verifies 16 tokens.)
+  - full 150-run Forge eval: **3846.6s → 1781.2s wall (2.16x)** at n-max 4 with 98K
+    q8_0 KV, and **2030.7s (1.89x)** on the shipped production config (120K q4_0 KV,
+    systemd managed proxy). Completion 150/150 both ways, correctness **146/150 →
+    149/150** (no regression). `tool_selection` and every `*_stateful` family stay 100%
+    — the draft chain does not disturb tool calls.
+  - 128K ctx still fits at n-max 3 (22.4 GB); at n-max 4 the 120K profile is 20.9 GB
+    used on a 3.4 GB desktop baseline (~17.5 GB incremental).
 - Dense 27B, 64 layers: 48 Gated DeltaNet (recurrent, ~no KV) + 16 full-attention
   (only these grow with ctx) → KV cache stays cheap at long context.
 - Native **262,144 ctx** (1M via YaRN). On the 24 GB card with **UD-Q3_K_XL (13.44 GB)**
-  we run **131072 (128K)** with **q4_0 KV + MTP draft** (~20.5 GB VRAM, ~2 GB headroom;
-  measured 2026-08-05). q8_0 KV + MTP OOMs at 128K; q4_0 KV halves KV and fits the draft.
-  UD-Q4_K_XL (17.9 GB) would cap ctx at ~16-24K — chose context over quant quality.
-  **Incremental VRAM re-measured 2026-08-31: ~18.1 GB** (18,897 → 796 MiB free on load,
-  @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. Profile gate = 18.2 GB
-  (footprint + 0.1; below ~18.4 desktop worst-case baseline, above the OOM floor; failure
-  below it is a clean 503 → fleet L2 fallback, not a crash).
+  we run **120000 (120K)** with **q4_0 KV**; the profile gate is 16.4 GB + 1.4 GB for
+  the drafter. UD-Q4_K_XL (17.9 GB) would cap ctx at ~16-24K — chose context over quant.
 - Native vision (images+video) in the source model; we run the text GGUF for agent work.
   The launcher auto-attaches a sibling `mmproj-*.gguf`, and the proxy captions inbound
   images (`[image: caption]` text blocks) so vision works through the text-only guardrail
@@ -357,18 +364,23 @@ llama-server \
 # Manager equivalent: cg server start -m MiniCPM5-2B-Q4_K_M
 ```
 
-### Qwen3.8-27B (128K context on 24 GB, MTP)
+### Qwen3.8-27B (120K context on 24 GB, DSpine draft)
 
 ```bash
 llama-server \
   -m Qwen3.8-27B-UD-Q3_K_XL.gguf \
+  -md Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf \
   --jinja --flash-attn auto \
-  --port 8080 -c 131072 \
+  --port 8080 -c 120000 \
   -ctk q4_0 -ctv q4_0 \
-  --spec-type draft-mtp -np 1
+  --spec-type draft-dflash --spec-draft-n-max 4 --spec-draft-ngl 99 \
+  --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 -np 1
 ```
 
-> **Notes:** q4_0 KV is required for 128K + MTP on 24 GB (q8_0 KV + MTP OOMs).
+> **Notes:** the drafter needs the `dspine` branch of cg's pinned fork — stock
+> llama.cpp refuses the GGUF rather than running it wrong. `--spec-draft-n-max 4`
+> is the peak on this card; raise it only after sweeping (see docs/models.md).
+> Manager equivalent: `cg server start -m Qwen3.8-27B-UD-Q3_K_XL`.
 
 ### Flint (128K context, q8_0 KV — fast MoE tier)
 

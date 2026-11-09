@@ -27,6 +27,11 @@ class ModelProfile:
     # None = use the --context-budget global default. Measured 2026-08-31:
     # tool-calling through the proxy is solid below ~11K prompts, flaky at
     # 13-19K regardless of temperature — cap well under the cliff.
+    drafter: str | None = None  # key into server/sources.py DRAFTERS: a
+    # speculative-decoding draft model the launcher attaches with -md. Its
+    # VRAM is added on top of vram_required_gb by the backend manager's gate.
+    spec_n_max: int | None = None  # override DRAFTERS[...].n_max (tokens
+    # drafted per verify step); lower it to buy context on a tight GPU.
 
 
 # fmt: off
@@ -91,7 +96,7 @@ PROFILES: dict[str, ModelProfile] = {
         family="Qwen3.8",
         quant="UD-Q3_K_XL",
         file_size_gb=13.44,
-        vram_required_gb=18.0,  # gate floor @120K ctx (was 18.2 @128K): incremental footprint ≈ 18.1 GB measured 2026-08-31 (18,897 MiB free → 796 MiB free on load @128K q4_0 KV + MTP + mmproj); loads succeeded at ≥18.4 GB free. 18.2 = footprint + 0.1, below the ~18.4 desktop worst-case baseline (rustdesk+venv), above the OOM floor. Failure mode below it is a clean 503 → fleet L2 fallback (queue-timeout), not a crash.
+        vram_required_gb=16.4,  # target-only footprint (the drafter adds 1.4 via DRAFTERS, so the gate needs 17.8). MEASURED 2026-11-09 with the DSpine drafter attached @120K ctx, q4_0 KV: 20,934 MiB used on a 3,425 MiB desktop baseline -> 17.5 GB incremental, i.e. 16.1 target + 1.4 drafter. 16.4 = measured + 0.3 cushion. Below the gate llama-server OOMs or falls back to host copies; the manager queues/503s instead of thrashing.
         context_tokens=120000,
         context_budget=12000,  # tool-call cliff ~20-27K (prose fallback); solid <~11K, flaky 13-19K (measured 2026-08-31). TieredCompact at 75% -> ~9-11K prompts.
         architecture="dense",
@@ -99,8 +104,17 @@ PROFILES: dict[str, ModelProfile] = {
         swe_bench_verified=61.7,
         sampling={"temperature": 1.0, "top_k": 20, "top_p": 0.95},
         boot_flags=["--jinja", "--flash-attn", "auto",
-                     "-ctk", "q4_0", "-ctv", "q4_0",
-                     "--spec-type", "draft-mtp", "-np", "1"],
+                     "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1"],
+        # Speculative decoding: DSpine draft model (-md) instead of the MTP head.
+        # MEASURED 2026-11-09 (RTX 3090 Ti, this quant, 120K ctx, q4_0 KV,
+        # mmproj attached): see plans/2026-11-09_dspine-qwen3.8-27b-llama-cpp.md.
+        # Short-ctx decode 46.3 -> ~94 tok/s (84 at this 120K config); 150-run
+        # Forge eval 3846.6s -> 2030.7s (1.89x), correctness 146/150 -> 149/150.
+        # DSpine drafts a
+        # 16-token block but only n_max=4 is worth verifying here; n_max 15
+        # costs 1.7 GB of context for no extra speed on a Q3 target.
+        drafter="Qwen3.8-27B-DSpine-b16-Q4_K_M",
+        spec_n_max=4,
     ),
     # ── Flint (MoE, 39.8B total / 2.5B active, 256K ctx, Apache-2.0) ──
     # Recursive's agentic-coding MoE (released 2026-10-21), trained from
@@ -285,6 +299,29 @@ PROFILES: dict[str, ModelProfile] = {
         sampling={"temperature": 0.7, "top_k": 20, "top_p": 0.9},
         boot_flags=["--jinja", "--flash-attn", "auto",
                      "--spec-type", "draft-mtp", "-np", "1"],
+    ),
+    # ── Qwen3-8B (Dense, 8.19B params) — the ONE model with a published internal map ──
+    # Chosen not for capability (the 27B outclasses it) but because neuron-lens published
+    # per-unit labels and fitted Jacobian lenses for this exact checkpoint: 884,736 neuron
+    # poles + 1,152 heads, CC-BY-4.0. Serving it through cg makes the agent's own brain the
+    # instrumented subject (`neuron-lens/tool/tracer.py`, bf16, needs the HF weights).
+    # Q8_0, not Q4: the lenses were fitted on bf16 weights, and a Q4 GGUF is a different
+    # network — the internal map would be approximately wrong rather than approximately right.
+    # Native 32K context (YaRN to 131K if ever needed). Tool calling via --jinja; Qwen3's
+    # recommended thinking-mode sampling is temp 0.6 / top_p 0.95 / top_k 20.
+    "Qwen3-8B-Q8_0": ModelProfile(
+        name="Qwen3-8B-Q8_0",
+        family="Qwen3",
+        quant="Q8_0",
+        file_size_gb=8.3,
+        vram_required_gb=11.5,  # 8.3 GB weights + KV at 32K (q8_0) + flash-attn headroom
+        context_tokens=32768,
+        architecture="dense",
+        active_params_b=8.19,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.6, "top_k": 20, "top_p": 0.95},
+        boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
+        context_budget=11000,  # cg's measured tool-calling cliff is ~11K prompts
     ),
 }
 # fmt: on

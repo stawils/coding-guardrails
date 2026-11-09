@@ -160,25 +160,37 @@ for shared-GPU systems. The systemd unit bakes this in.
 #   To rebuild: cd ~/llama.cpp && git pull && cmake -S . -B build -DGGML_CUDA=ON -DLLAMA_CURL=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j 24 --target llama-server
 LLAMA=~/llama.cpp/llama-server
 
-# Qwen3.8-27B UD-Q3_K_XL (DEFAULT worker — 128K ctx, MTP, best-measured)
+# Qwen3.8-27B UD-Q3_K_XL (DEFAULT worker — 120K ctx, DSpine draft, best-measured)
 #   Released Aug 2026, Apache-2.0, same qwen3_5 hybrid arch as Qwen3.5-9B (48
 #   Gated DeltaNet + 16 full-attn layers → cheap KV at long ctx). Native 256K ctx;
-#   128K on 24 GB. MTP spec decoding (~68 tok/s gen, ~3 tok/draft).
-#   MEASURED 2026-08-15 Forge eval (proxy mode, 150 runs): 150/150 completion
-#   (100%), 148/150 correctness (99%) — best ever on this harness, vs Qwen3.5-9B
-#   100%/92% and Qwen3.6-27B 99.3%/94%. Only misses: compaction_chain_p1/p2 (4/5 each).
-#   VRAM: incremental ~18.9 GB @128K q4_0 KV + MTP + mmproj (gate 19.0). q8_0 KV + MTP
-#   OOMs at 128K; q4_0 KV halves KV and fits the draft. This is the systemd
-#   default on :8081 (coding-guardrails up --model Qwen3.8-27B-UD-Q3_K_XL).
+#   120K on 24 GB.
+#   SPEC DECODING = DSpine (since v0.26.0), not MTP: a 5-layer parallel drafter
+#   (arXiv 2609.36173, Tencent Hunyuan) that reads hidden states from target
+#   layers 1/16/31/46/61 and drafts a 16-token block with causal code-bridge
+#   injection. Rides llama.cpp's `draft-dflash` implementation type. Needs the
+#   `dspine` branch of cg's pinned fork (PINNED_REPO in server/version.py).
+#   MEASURED 2026-11-09 on this box (RTX 3090 Ti, this quant): short-ctx decode
+#   46.3 -> 94.5 tok/s at --spec-draft-n-max 4; 84 tok/s at the production 120K
+#   config. Full 150-run Forge eval: 150/150 completion, 149/150 correctness
+#   (99%), 33.8 min wall (29.7 min at 98K q8_0 KV) vs 64.1 min without
+#   speculation -> 1.89x production / 2.16x at 98K. n-max 4 is the
+#   peak here — 15 is the same speed for 1.7 GB less context; 2 and 7 are slower.
+#   VRAM: ~17.5 GB incremental @120K q4_0 KV + drafter (20.9 GB on a 3.4 GB
+#   desktop); gate = 16.4 (target) + 1.4 (drafter). 128K still fits at n-max 3.
+#   This is the systemd default on :8081 (coding-guardrails up --model Qwen3.8-27B-UD-Q3_K_XL).
 #   VISION: the launcher auto-attaches a sibling mmproj-*.gguf (multimodal),
 #   and the proxy captions inbound images → [image: caption] text (Option A:
 #   vision through a text-only guardrail pipeline). Verified 2026-08-15 through
 #   :8081. Video (hour-scale) is vLLM/SGLang territory — unsupported on llama.cpp.
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf \
-  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -md ~/models/dspine/Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf \
+  -c 120000 -ngl 99 --host 0.0.0.0 --port 8080 \
   --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 \
-  --spec-type draft-mtp -np 1 -v
+  --spec-type draft-dflash --spec-draft-n-max 4 --spec-draft-ngl 99 \
+  --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 -np 1 -v
+#   (MTP is still available as a fallback: --spec-type draft-mtp --spec-draft-n-max 2,
+#   but it is ~2x slower than DSpine on this hardware.)
 
 # Flint UD-Q3_K_XL (fast MoE tier — 39.8B total / 2.5B active, 128K ctx)
 #   Recursive Flint, released 2026-10-21, Apache-2.0. 49 layers (2 dense + 47 MoE,
@@ -307,7 +319,7 @@ coding-guardrails serve \
 
 ### Notes
 
-- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`). cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-02 to `39febd2ad` (llama.cpp 0.8.0-dev)** (was `d77256999`) for the LFM3 tri-hybrid family (`LLM_ARCH_LFM3`, upstream #31252/#31257/#31283 — text, VL, audio, omni + video input), on top of the Flint MoE arch (`LLM_ARCH_FLINT`, #30928), the Gemma 4 tool-call fix, and Qwen3.5/3.6/3.8, Ornith, LFM2.5, MiniCPM5 support. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The 2026-11-02 rebuild was smoke-tested through `cg server start` against Flint (MoE + q8_0 KV @128K, clean tool call) and LFM3-1.7B (256K ctx, clean tool call); the Qwen3.8-27B default GGUF was absent on the test host, so it was NOT re-verified on this pin.
+- **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`) for scratch experiments. cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-09 to `d493f84` (llama.cpp 0.9.0-dev) from the DSpine fork** (`PINNED_REPO = github.com/Ajay9o9/llama.cpp`, branch `dspine`; was `39febd2ad` upstream). The fork commit is `dflash : add DSpine draft model support` on top of upstream master, so everything the old pin carried (Gemma 4 tool-call fix, Flint `LLM_ARCH_FLINT`, LFM3 tri-hybrid, Qwen3.5/3.6/3.8, Ornith, LFM2.5, MiniCPM5) is still in. `build.py` re-points the checkout's `origin` every run, so a checkout cloned from ggml-org follows the pin to the fork with no manual git work. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The 2026-11-09 rebuild was verified end-to-end: `cg server start -m Qwen3.8-27B-UD-Q3_K_XL` boots with `-md` + `--spec-type draft-dflash --spec-draft-n-max 4`, and a 150-run Forge eval through :8081 scored 150/150 completion / 149/150 correctness in 29.7 min. Switch `PINNED_REPO` back to ggml-org once DSpine lands upstream.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
 - Qwen3.6-27B: max reliable ctx on the 24 GB card is **48K with q8_0 KV** (UD-Q4_K_XL). 56K+ needs a
@@ -372,6 +384,11 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
 that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.5: 139/150
 (92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.
+**Qwen3.8-27B + DSpine (v0.26.0 default): 150/150 completion, 149/150 correctness (99%),
+33.8 min wall on the shipped profile (120K ctx, q4_0 KV, managed proxy) / 29.7 min at 98K
+q8_0 KV** — the same target GGUF and harness without the drafter takes 64.1 min
+(150/150, 146/150), so DSpine is a clean **1.89x on the production path, 2.16x at 98K**
+at no accuracy cost.
 **MiniCPM5-2B (added v0.20.0 as the tiny tier): 150/150 (100%) completion, 128/150 (85%) accuracy**
 — tool_selection 5/5 (+stateful) and data_gap_recovery_extended 100% fix LFM2.5's genuine gaps;
 only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay weak.

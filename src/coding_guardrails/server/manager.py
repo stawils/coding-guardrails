@@ -249,9 +249,16 @@ class BackendManager:
 
     def _vram_needed(self) -> float:
         from coding_guardrails.models.profiles import get_profile
+        from coding_guardrails.server.sources import get_drafter
 
         profile = get_profile(self.cfg.profile)
         base = profile.vram_required_gb if profile else 18.0
+        # A drafter adds weights + one copy of the recurrent state per drafted
+        # token; the gate must budget for it or the load OOMs mid-verify.
+        if profile is not None and profile.drafter:
+            spec = get_drafter(profile.drafter)
+            if spec is not None:
+                base += spec.vram_gb
         return base + self.cfg.vram_margin_gb
 
     async def _await_health(self, timeout: float) -> bool:

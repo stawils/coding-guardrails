@@ -53,9 +53,22 @@ def _patch_health(monkeypatch: pytest.MonkeyPatch, mgr: BackendManager, ok: bool
 
 
 def test_vram_needed_math() -> None:
-    # Profile gate: Qwen3.8-27B-UD-Q3_K_XL declares vram_required_gb=18.0 @120K ctx.
+    from coding_guardrails.models.profiles import get_profile
+    from coding_guardrails.server.sources import get_drafter
+
+    # Profile gate = profile.vram_required_gb + the drafter's own allowance.
+    profile = get_profile("Qwen3.8-27B-UD-Q3_K_XL")
+    spec = get_drafter(profile.drafter)
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL", margin=0.0)
-    assert mgr._vram_needed() == pytest.approx(18.0, rel=0.01)
+    assert mgr._vram_needed() == pytest.approx(
+        profile.vram_required_gb + spec.vram_gb, rel=0.01
+    )
+
+    # A profile without a drafter budgets only its own footprint.
+    no_drafter = get_profile("gemma-4-26B-A4B-it-qat-UD-Q4_K_XL")
+    assert no_drafter.drafter is None
+    mgr_plain = _make_manager("gemma-4-26B-A4B-it-qat-UD-Q4_K_XL", margin=0.0)
+    assert mgr_plain._vram_needed() == pytest.approx(no_drafter.vram_required_gb, rel=0.01)
 
     # Unknown profile falls back to the 18.0 GB baseline + margin.
     mgr2 = _make_manager("does-not-exist", margin=2.0)
@@ -65,7 +78,7 @@ def test_vram_needed_math() -> None:
 @pytest.mark.asyncio
 async def test_gate_ok_loads_and_releases(monkeypatch: pytest.MonkeyPatch) -> None:
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL")
-    _patch_vram(monkeypatch, 18.5)  # 18.5 >= 18.0 gate
+    _patch_vram(monkeypatch, 19.5)  # 19.5 >= 17.8 gate (target 16.4 + drafter 1.4)
     start_calls, _ = _patch_launcher(monkeypatch, is_running=False)
     _patch_health(monkeypatch, mgr, True)
 
@@ -97,7 +110,7 @@ async def test_queue_timeout_raises_backend_unavailable(monkeypatch: pytest.Monk
 @pytest.mark.asyncio
 async def test_health_timeout_raises_and_stops_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL")
-    _patch_vram(monkeypatch, 18.5)
+    _patch_vram(monkeypatch, 19.5)
     start_calls, stop_calls = _patch_launcher(monkeypatch, is_running=False)
     _patch_health(monkeypatch, mgr, False)  # backend never becomes healthy
 
@@ -112,7 +125,7 @@ async def test_health_timeout_raises_and_stops_backend(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_unload_now_clears_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
     mgr = _make_manager("Qwen3.8-27B-UD-Q3_K_XL")
-    _patch_vram(monkeypatch, 18.5)
+    _patch_vram(monkeypatch, 19.5)
     _, _ = _patch_launcher(monkeypatch, is_running=False)
     _patch_health(monkeypatch, mgr, True)
 
@@ -216,7 +229,7 @@ async def test_multi_single_model_backward_compat(monkeypatch: pytest.MonkeyPatc
         )},
         default="Qwen3.8-27B-UD-Q3_K_XL",
     )
-    _patch_vram(monkeypatch, 18.5)
+    _patch_vram(monkeypatch, 19.5)
     start_calls, _ = _patch_launcher(monkeypatch, is_running=False)
     async def fake_health(self, timeout):
         return True

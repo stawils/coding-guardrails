@@ -65,16 +65,28 @@ available. Re-running `build` updates to the pinned commit incrementally.
 
 ## Updating the pin
 
-The pin lives in `src/coding_guardrails/server/version.py`
-(`PINNED_COMMIT`). To move to a newer llama.cpp:
+The pin lives in `src/coding_guardrails/server/version.py` (`PINNED_COMMIT`
++ `PINNED_SHORT`, and `PINNED_REPO` for the origin). To move to a newer
+llama.cpp:
 
 1. Bump `PINNED_COMMIT` to the new full SHA (and `PINNED_SHORT`).
-2. Confirm the fix commits you need are ancestors of the new SHA.
-3. `coding-guardrails server build` re-checks out and rebuilds.
+2. Point `PINNED_REPO` at a repo that actually contains that SHA — `build`
+   re-points the checkout's `origin` on every run, so moving between upstream
+   and a fork needs no manual git work.
+3. Confirm the fix commits you need are ancestors of the new SHA.
+4. `coding-guardrails server build` re-checks out and rebuilds.
 
-The current pin (`afcda09d1`, build 9284) includes the Gemma 4 specialized
-tool-call parser (#21418, #21704) that fixes complex/nested JSON tool-call
-corruption.
+The current pin (`d493f84`, llama.cpp 0.9.0-dev) is **upstream master plus one
+fork commit**: DSpine speculative decoding is not upstream yet, so `PINNED_REPO`
+is `github.com/Ajay9o9/llama.cpp` and the commit is
+`dflash : add DSpine draft model support` (new gguf tensor names, the code
+bridge, the serial last-write refinement — no network/shell/file-write
+additions). Everything earlier in this chain is included: the Gemma 4
+tool-call parser (#21418, #21704), `LLM_ARCH_FLINT` (#30928) and the LFM3
+tri-hybrid family (#31252/#31257/#31283).
+
+Switch `PINNED_REPO` back to `https://github.com/ggml-org/llama.cpp.git` once
+DSpine lands upstream; the drafter flags are stable either way.
 
 ## Start options
 
@@ -90,6 +102,28 @@ coding-guardrails server start -m <model> \
 Flags come from the model's profile (`models/profiles.py` `boot_flags`), so
 the q8 KV cache (`-ctk q8_0 -ctv q8_0`), `--jinja`, sampling, etc. are applied
 automatically. Anything after `--` is forwarded verbatim.
+
+### Speculative decoding drafters
+
+A profile can name a draft model (`ModelProfile.drafter`, keyed into
+`server/sources.py` `DRAFTERS`). The launcher then appends the full speculative
+decoding argv automatically:
+
+```
+-md <drafter.gguf> --spec-type <type> --spec-draft-n-max <n>
+--spec-draft-ngl 99 --spec-draft-type-k q8_0 --spec-draft-type-v q8_0
+```
+
+`cg server download <profile>` fetches the drafter alongside the target model.
+If the drafter GGUF is missing, the launcher logs a warning and boots the
+target **without** speculation rather than failing — the always-on tier must not
+depend on an optional speed artifact.
+
+Two VRAM details matter: the drafter's own allowance (`DRAFTERS[...].vram_gb`)
+is added to the profile's gate, and a drafter costs roughly one copy of a hybrid
+model's recurrent state per drafted token (Qwen3.8-27B: ~150 MB each), so a
+long `--spec-draft-n-max` eats context budget. `spec_n_max` on the profile
+overrides the drafter's default.
 
 The server runs detached (own process group) and survives the CLI exiting. Its
 PID and combined stdout/stderr live under `run/`.
