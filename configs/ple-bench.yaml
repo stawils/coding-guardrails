@@ -1,0 +1,98 @@
+# Guardrail profile for benchmark runs (PLE-Bench / SWE-style evals), not for daily coding.
+#
+# Why this file exists
+# --------------------
+# The default profile is built to protect a developer's real repository. A benchmark
+# task container is the opposite: throwaway, root-owned, and full of absolute paths
+# that sit outside the proxy's cwd. Several default rules therefore either block
+# legitimate work or silently MUTATE the content the agent reads — which corrupts a
+# measurement while looking like model failure.
+#
+# Use with:
+#   coding-guardrails serve --backend-url http://localhost:8080 \
+#     --model <profile> --port 8081 --serialize \
+#     --config configs/ple-bench.yaml \
+#     --context-budget 19000
+#
+# (equivalently `--no-guardrails` if you also want path/command/secrets off)
+#
+# Measured 2026-11-19 on PLE dev task `backfeed-energization-reply`:
+#   - deliverables live at /filesystem/**, /app/output/**, /app/tools/.apps_data/**
+#     i.e. absolute, outside any workspace root -> default path_safety blocks them
+#   - the agent writes NEW files with no prior read -> `prerequisites` blocks after 4
+#   - the judge payload for one rubric task is 125,175 tokens -> needs --ctx 128000
+#     and the Layer-1 budget must not try to "compact" a single oversized message
+
+# No workspace root: benchmark tasks are absolute-path-native and throwaway.
+# With path_safety disabled this value is unused; kept explicit for readers.
+workspace: "/"
+
+# ── Disabled: they block or rewrite legitimate benchmark traffic ──
+
+# Deliverables are absolute paths (/filesystem, /app/output) outside cwd.
+# Keep this OFF for benchmarks. The container is disposable; there is nothing
+# to protect that the harness does not already own.
+path_safety:
+  enabled: false
+
+# Blocks sudo / rm -rf / / mkfs / dd if= / pipe-to-shell / inline PATH=.
+# Harmless to keep in a throwaway container and still catches a runaway agent.
+command_safety:
+  enabled: true
+  strength: hard
+  blocked_commands:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - "mkfs"
+    - ":(){ :|:& };:"
+    - "shutdown"
+    - "reboot"
+    - "init 0"
+    - "init 6"
+
+# Masking keys is free and never wrong.
+secrets:
+  enabled: true
+  strength: soft          # mask and warn; never block a benchmark deliverable
+  mask_value: "[REDACTED]"
+
+# OFF: blocks any tool call that echoes the planted token. A deliverable memo
+# that quotes the system prompt would be blocked mid-write.
+canary:
+  enabled: false
+
+# OFF — this is the dangerous one. mode: mark INSERTS a spotlighting warning into
+# tool results, so the agent reads text that is not in the task files. On a
+# benchmark that is silent content corruption.
+input_scanning:
+  enabled: false
+  mode: off
+
+# OFF: requires a prior read before write/edit, blocks after 4 violations.
+# Benchmark tasks require writing brand-new deliverables.
+prerequisites:
+  enabled: false
+
+# OFF: nudges "run tests" after every edit. Pure token waste here.
+sequencing:
+  enabled: false
+
+# Keep: soft nudge when a tool returns empty. Helps weak local models recover.
+tool_resolution:
+  enabled: true
+  strength: soft
+
+# Keep the runaway backstop, but far above any real benchmark session.
+session_budget:
+  enabled: true
+  max_file_ops: 20000
+  max_commands: 20000
+  max_reads: 0
+  warn_at: 0.9
+
+# OFF: lints every edited file. Benchmark deliverables are .py/.xlsx/.docx the
+# agent is still writing; lint noise competes with the actual task.
+lint:
+  enabled: false
+  workspace: "/"
+  mode: nudge

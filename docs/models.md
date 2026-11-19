@@ -73,7 +73,7 @@ gap — 100% on all four families** — which is why it is the new default worke
 ```bash
 $LLAMA \
   -m ~/.local/share/coding-guardrails/models/MiniCPM5-2B-Q4_K_M.gguf \
-  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 131072 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 # ~182 tok/s, ~3 GB VRAM. Reasoning model: keep max_tokens generous.
 ```
@@ -108,7 +108,7 @@ $LLAMA \
 ```bash
 $LLAMA \
   -m ~/.local/share/coding-guardrails/models/LFM3-1.7B-GGUF/LFM3-1.7B-Q8_0.gguf \
-  -c 262144 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 262144 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1 \
   --temp 0.1 --top-k 50 --repeat-penalty 1.1 -v
 # ~150 tok/s, ~4.5 GB VRAM at the full 256K ctx.
@@ -241,7 +241,7 @@ $LLAMA \
 # Raw equivalent:
 $LLAMA \
   -m ~/.local/share/coding-guardrails/models/flint-GGUF/flint-UD-Q3_K_XL.gguf \
-  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 131072 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1
 # ~107 tok/s decode, ~20 GB VRAM. Reasoning model — keep max_tokens generous
 # (hard problems: >= 32K output budget per the model card).

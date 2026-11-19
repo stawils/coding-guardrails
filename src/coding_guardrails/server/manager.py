@@ -42,7 +42,7 @@ class BackendConfig:
     """Lifecycle parameters for the managed backend."""
 
     profile: str
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8080
     ctx: int | None = None
     ngl: int = 99

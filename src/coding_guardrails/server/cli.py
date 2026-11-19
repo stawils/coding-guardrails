@@ -67,7 +67,7 @@ def _build(cpu: bool, cuda: bool, jobs: int | None) -> None:
 @click.option("-m", "--model", "model_name", required=True, help="Model profile name.")
 @click.option("--ctx", type=int, help="Context window (default: profile max).")
 @click.option("--ngl", type=int, default=99, show_default=True, help="GPU layers.")
-@click.option("--host", default="0.0.0.0", show_default=True)
+@click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", type=int, default=8080, show_default=True)
 @click.option(
     "--wait/--no-wait",

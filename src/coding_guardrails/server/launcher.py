@@ -172,7 +172,7 @@ def build_argv(
     model_path: Path | None = None,
     ctx: int | None = None,
     ngl: int = 99,
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8080,
     extra: list[str] | None = None,
 ) -> list[str]:
@@ -183,7 +183,8 @@ def build_argv(
         model_path: override model resolution.
         ctx: context window (default: profile.context_tokens).
         ngl: GPU layers (default: 99 = all).
-        host/port: bind address.
+        host/port: bind address (loopback by default; the proxy is the only
+            intended client, so there is no reason to accept off-host traffic).
         extra: additional raw flags appended verbatim.
     """
     profile = get_profile(profile_name)
@@ -223,7 +224,7 @@ def start(
     *,
     ctx: int | None = None,
     ngl: int = 99,
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8080,
     extra: list[str] | None = None,
     detach: bool = True,
