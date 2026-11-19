@@ -233,6 +233,111 @@ class TestDrafterArgv:
         assert any("without speculative" in r.message for r in caplog.records)
 
 
+class TestLoraArgv:
+    """A profile that declares a LoRA adapter gets --lora, and composes with -md."""
+
+    PROFILE = "Qwen3.8-27B-pi-adapted"
+
+    def _place_lora(self, monkeypatch, tmp_path, present=True):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(registry, "FALLBACK_CACHE_DIRS", [])
+        spec = sources.get_lora("Qwen3.8-27B-pi-adapted")
+        path = launcher.lora_path(spec.repo_id, spec.filename)
+        if present:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x")
+        return spec, path
+
+    def test_profile_declares_the_adapter(self):
+        profile = get_profile(self.PROFILE)
+        assert profile.lora == "Qwen3.8-27B-pi-adapted"
+
+    def test_main_profile_leaves_reasoning_at_the_harness_default(self):
+        """Thinking stays on: switching to the adapted profile must not
+        silently change the reasoning contract the base profile has."""
+        profile = get_profile(self.PROFILE)
+        assert "--reasoning" not in profile.boot_flags
+        assert "--no-reasoning-preserve" not in profile.boot_flags
+
+    def test_nothink_sibling_pins_reasoning_off(self):
+        profile = get_profile("Qwen3.8-27B-pi-adapted-nothink")
+        assert "--reasoning" in profile.boot_flags
+        idx = profile.boot_flags.index("--reasoning")
+        assert profile.boot_flags[idx + 1] == "off"
+        # the sibling is the same model + adapter, only the reasoning differs
+        assert profile.lora == get_profile(self.PROFILE).lora
+        assert profile.drafter == get_profile(self.PROFILE).drafter
+
+    def test_lora_flag_added_when_present(self, monkeypatch, tmp_path):
+        spec, path = self._place_lora(monkeypatch, tmp_path)
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "--lora" in argv
+        assert argv[argv.index("--lora") + 1] == str(path)
+
+    def test_lora_and_drafter_coexist(self, monkeypatch, tmp_path):
+        """Verified on hardware 2026-11-19: both load in one process."""
+        self._place_lora(monkeypatch, tmp_path)
+        drafter = sources.get_drafter("Qwen3.8-27B-DSpine-b16-Q4_K_M")
+        dpath = (
+            paths.models_dir() / drafter.repo_id.split("/")[-1] / drafter.filename
+        )
+        dpath.parent.mkdir(parents=True, exist_ok=True)
+        dpath.write_bytes(b"x")
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "--lora" in argv and "-md" in argv
+        assert argv[argv.index("-md") + 1] == str(dpath)
+
+    def test_missing_lora_warns_and_serves_the_base(
+        self, monkeypatch, tmp_path, caplog
+    ):
+        """Losing the adapter silently would serve the wrong model."""
+        self._place_lora(monkeypatch, tmp_path, present=False)
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        with caplog.at_level("WARNING"):
+            argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "--lora" not in argv
+        assert any(
+            "WITHOUT" in r.message and "BASE model" in r.message
+            for r in caplog.records
+        )
+
+    def test_missing_lora_keeps_the_drafter(self, monkeypatch, tmp_path):
+        self._place_lora(monkeypatch, tmp_path, present=False)
+        drafter = sources.get_drafter("Qwen3.8-27B-DSpine-b16-Q4_K_M")
+        dpath = (
+            paths.models_dir() / drafter.repo_id.split("/")[-1] / drafter.filename
+        )
+        dpath.parent.mkdir(parents=True, exist_ok=True)
+        dpath.write_bytes(b"x")
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "--lora" not in argv
+        assert "-md" in argv
+
+    def test_unknown_lora_id_warns(self, monkeypatch, tmp_path, caplog):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(
+            "coding_guardrails.models.profiles.PROFILES",
+            {
+                self.PROFILE: dataclasses.replace(
+                    get_profile(self.PROFILE), lora="not-registered"
+                )
+            },
+        )
+        gguf = tmp_path / "target.gguf"
+        gguf.write_bytes(b"x")
+        with caplog.at_level("WARNING"):
+            argv = launcher.build_argv(self.PROFILE, model_path=gguf)
+        assert "--lora" not in argv
+        assert any("unknown LoRA" in r.message for r in caplog.records)
+
+
 class TestLauncherLifecycle:
     def _fake_binary(self, tmp_path, lifetime=30):
         """A real tiny executable that sleeps (so pid/is_running behave truthfully)."""

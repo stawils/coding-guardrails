@@ -6,7 +6,7 @@ An LLM proxy with safety guardrails, built on [Forge](https://github.com/antoine
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 794 tests (~25s)
+pytest tests/unit/ -q          # 810 tests (~25s)
 uv pip install -e ".[dev]"     # refresh editable install
 ```
 
@@ -185,7 +185,7 @@ LLAMA=~/llama.cpp/llama-server
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf \
   -md ~/models/dspine/Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf \
-  -c 120000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 120000 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 \
   --spec-type draft-dflash --spec-draft-n-max 4 --spec-draft-ngl 99 \
   --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 -np 1 -v
@@ -208,7 +208,7 @@ $LLAMA \
 #   Manager: cg server start -m flint-UD-Q3_K_XL
 $LLAMA \
   -m ~/.local/share/coding-guardrails/models/flint-GGUF/flint-UD-Q3_K_XL.gguf \
-  -c 131072 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 131072 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1 -v
 
 # Qwen3.5-9B-MTP (previous default — best tool-calling reliability at 9B)
@@ -220,7 +220,7 @@ $LLAMA \
 #   PORT: backend MUST be :8080 — :8081 is the guardrails proxy and will collide.
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-UD-Q4_K_XL.gguf \
-  -c 32768 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 32768 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto --spec-type draft-mtp -np 1 -v
 #   Tune up: raise -c toward 200000 (max) for long context, --spec-draft-n-max 5 for more speed.
 
@@ -230,19 +230,19 @@ $LLAMA \
 #   Raw equivalent:
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q4_K_XL.gguf \
-  -c 49152 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 49152 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ub 256 -ctk q8_0 -ctv q8_0 -np 1 -v
 
 # Qwen3.6-27B UD-Q3_K_XL (49K ctx max, needs 24+ GB free VRAM — not profile-registered)
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/Qwen3.6-27B-MTP-GGUF/Qwen3.6-27B-UD-Q3_K_XL.gguf \
-  -c 81920 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 81920 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -v
 
 # Gemma 4 12B Unified UD-Q4_K_XL (256K ctx, ~8 GB VRAM)
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/gemma-4-12b-it-GGUF/gemma-4-12b-it-UD-Q4_K_XL.gguf \
-  -c 256000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 256000 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -np 1 -v
 
 # Gemma 4 26B A4B QAT UD-Q4_K_XL (200K ctx, ~20 GB VRAM)
@@ -251,7 +251,7 @@ $LLAMA \
 #   Highest raw capability, but Qwen3.5-9B is the default (better tool-calling).
 $LLAMA \
   -m ~/.cache/lm-studio/models/unsloth/gemma-4-26B-A4B-it-qat-GGUF/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf \
-  -c 200000 -ngl 99 --host 0.0.0.0 --port 8080 \
+  -c 200000 -ngl 99 --host 127.0.0.1 --port 8080 \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 \
   --temp 1.0 --top-p 0.95 --top-k 64 -np 1 -v
 
@@ -319,6 +319,26 @@ coding-guardrails serve \
 
 ### Notes
 
+- **Qwen3.8-27B-pi-adapted (default since 2026-11-19)**: a 319 MB F16 LoRA
+  (`harness-hub/Qwen3.8-27B-pi-adapted-GGUF`) over the UD-Q3_K_XL base, RL-trained (AsyncGRPO,
+  LoRA r=32 all-linear) *inside* unmodified pi. Card: SWE-bench Pro hard-51 39.2% -> 64.7%,
+  Terminal-Bench 2.1 39.5% -> 55.8%, turns per solved task 23 vs 59 (the earlier
+  "29.4% -> 62.7%" was retracted by the authors — nine rollouts died on a dead tunnel).
+  `coding-guardrails server start -m Qwen3.8-27B-pi-adapted`. It composes with the DSpine
+  drafter (verified 2026-11-19: adapter scale 1.0 AND draft-dflash n_max=4 in one process;
+  acceptance 0.58-0.80) at ~12% decode cost (60-63 vs 70.6 tok/s). ctx **160000** with
+  q4_0 KV = 21,068 MiB used / ~1.4-1.5 GB free (192K boots but leaves 704 MiB — too tight
+  on a shared desktop; ~26 KB per context token). `context_budget=120000` because the base
+  model's tool-call cliff does not reproduce on this adapter (24/24 to 98K, see below).
+  Thinking is ON (`--reasoning auto`); the `-nothink` sibling pins `--reasoning off`, the
+  mode it was trained and benchmarked in — that buys ~4.5x fewer tokens but costs ~10 points
+  on SWE-bench Pro hard-51. Caveat: trained on BF16, we run Q3_K_XL, so card numbers are
+  directional only. Logprobs are unavailable while the drafter is on.
+- **LoRA plumbing**: `ModelProfile.lora` -> `LORAS` in `server/sources.py` -> `--lora` in
+  `server/launcher.py` (`_lora_argv`) -> `download_lora` in `server/download.py`. A missing
+  adapter WARNS loudly ("serving the BASE model, WITHOUT the adapter") and boots anyway,
+  same policy as a missing drafter. An adapted profile reuses its base profile's GGUF — its
+  `SOURCES` entry points at the same file, so only the adapter is downloaded.
 - **llama-server**: use the local `~/llama.cpp/llama-server` (a symlink to `build/bin/llama-server`) for scratch experiments. cg's managed binary lives at `~/.local/share/coding-guardrails/llama.cpp` and is built from the pin in `server/version.py` — **bumped 2026-11-09 to `d493f84` (llama.cpp 0.9.0-dev) from the DSpine fork** (`PINNED_REPO = github.com/Ajay9o9/llama.cpp`, branch `dspine`; was `39febd2ad` upstream). The fork commit is `dflash : add DSpine draft model support` on top of upstream master, so everything the old pin carried (Gemma 4 tool-call fix, Flint `LLM_ARCH_FLINT`, LFM3 tri-hybrid, Qwen3.5/3.6/3.8, Ornith, LFM2.5, MiniCPM5) is still in. `build.py` re-points the checkout's `origin` every run, so a checkout cloned from ggml-org follows the pin to the fork with no manual git work. Rebuild: `coding-guardrails server build` (CUDA auto-detected; the CLI's shallow `git fetch <sha>` can fail with `early EOF` — retry, and clear any stale `.git/shallow.lock` left by a killed run). The 2026-11-09 rebuild was verified end-to-end: `cg server start -m Qwen3.8-27B-UD-Q3_K_XL` boots with `-md` + `--spec-type draft-dflash --spec-draft-n-max 4`, and a 150-run Forge eval through :8081 scored 150/150 completion / 149/150 correctness in 29.7 min. Switch `PINNED_REPO` back to ggml-org once DSpine lands upstream.
 - **PORTS**: llama-server backend = `:8080`, guardrails proxy = `:8081`. Never run llama-server on `:8081` (collides with the proxy).
 - **Qwen3.5-MTP `missing tensor 'blk.32.ssm_conv1d.weight'` error** = an OLD llama.cpp build (build 8276-era). The GGUF is correct (33 layers; blk.32 is an attention layer, not SSM). Build ≥ `5a6a0dd` reads the real layout and loads fine. If this recurs, the culprit is a stale binary on PATH / a vendored checkout, not the file.
@@ -334,12 +354,17 @@ coding-guardrails serve \
 - **Gemma 4 12B Unified**: Dense 12B, 256K ctx, encoder-free multimodal (text+image+audio). Only ~8 GB VRAM at Q4 — massive headroom on 24 GB cards. **No MTP yet** (llama.cpp issue #22747). Sampling: temp=1.0, top_k=64, top_p=0.95.
 - **Gemma 4 26B A4B QAT**: MoE (25.2B total / 3.8B active), native 256K ctx (run at 200K). ~14.25 GB weights, **~20 GB VRAM at 200K** with q8_0 KV cache — needs `-ctk q8_0 -ctv q8_0`. Sliding-window attention (5 global of 30 layers) keeps the KV cache tiny. Highest capability (88.3% AIME, 77.1% LiveCodeBench). **No MTP.** Use the **Unsloth UD-Q4_K_XL** QAT GGUF only — naive Q4_0 loses 15.4pp top-1.
 - `SafeLlamafileClient` needs `gguf_path` (stem = model name): use `/tmp/<model-name>.gguf`
-- **Tool-call cliff (measured 2026-08-31):** Qwen3.8-27B stops tool-calling at ~20-27K
-  prompt tokens through the proxy (prose fallback, no reasoning); solid below ~11K and
-  flaky at 13-19K regardless of temperature. The serving ContextManager budgets
-  min(profile_ctx, profile.context_budget or `--context-budget`), default 12000 —
-  TieredCompact fires at ~75% (~9K) so worker sessions stay under the cliff. Raise
-  `--context-budget` only for text-heavy single-shot reads. Probe: eval/scripts/probe_longctx.py.
+- **Tool-call cliff is MODEL-SPECIFIC — do not generalise it.** Measured 2026-08-31 on the
+  *base* Qwen3.8-27B: tool-calling collapses to prose at ~20-27K prompt tokens through the
+  proxy (solid <~11K, flaky 13-19K regardless of temperature). The serving ContextManager
+  budgets min(profile_ctx, profile.context_budget or `--context-budget`), default 12000, so
+  the base profile's `context_budget` stays 12000 and TieredCompact fires at ~75% (~9K).
+  **RE-PROBED 2026-11-19 on the pi-adapted LoRA (`Qwen3.8-27B-pi-adapted`): the cliff does
+  NOT reproduce** — 24/24 tool calls at 16K/24K/32K/49K/65K/98K prompt tokens backend-direct,
+  19/20 through the proxy at `--context-budget 120000` (the single miss uncorrelated with
+  length; 98K clean). That profile therefore ships `context_budget=120000`
+  (TieredCompact at ~90K). Long-horizon *quality* at 90K is still unmeasured — the probe
+  only proves the model does not fall back to prose. Probe: eval/scripts/probe_longctx.py.
 - `recommended_sampling=False` — model not in Forge's registry
 - any md file writing should be in gitignored plans/ folder.
 - use one subagent at a time , no parallel agents.
@@ -347,11 +372,11 @@ coding-guardrails serve \
 ## Testing
 
 ```bash
-pytest tests/unit/ -q              # All 794 tests
+pytest tests/unit/ -q              # All 810 tests
 pytest tests/unit/ -q -k "loop"    # Specific rule
 ```
 
-All 794 tests must pass before committing.
+All 810 tests must pass before committing.
 
 ## Eval
 
@@ -384,7 +409,7 @@ Results go to `eval/runs/<timestamp>/` (gitignored).
 re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
 that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.5: 139/150
 (92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.
-**Qwen3.8-27B + DSpine (v0.26.0 default): 150/150 completion, 149/150 correctness (99%),
+**Qwen3.8-27B + DSpine (v0.26.0 default; v0.27.0 adds the pi LoRA on top): 150/150 completion, 149/150 correctness (99%),
 33.8 min wall on the shipped profile (120K ctx, q4_0 KV, managed proxy) / 29.7 min at 98K
 q8_0 KV** — the same target GGUF and harness without the drafter takes 64.1 min
 (150/150, 146/150), so DSpine is a clean **1.89x on the production path, 2.16x at 98K**
@@ -414,7 +439,7 @@ files — re-sync `tests/eval` from forge upstream after any vendor refresh.
 ## Development Guidelines
 
 - **Do NOT hack Forge source** — extend via public API, subclassing, wrapping
-- All 794 unit tests must pass
+- All 810 unit tests must pass
 - No hardcoded scenario-specific logic
 - Block responses must return **text**, not empty tool calls
 - Enforcement prompts must mention `respond()` as the exit tool
@@ -445,7 +470,7 @@ Every release follows these steps **in order**. Do not skip any step.
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # All 794 tests MUST pass
+pytest tests/unit/ -q          # All 810 tests MUST pass
 ```
 
 If any test fails → **stop**, fix, re-run. Do not proceed.

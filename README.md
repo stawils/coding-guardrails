@@ -54,9 +54,15 @@ policy. Neither requires rewriting your agent.
 pip install coding-guardrails
 
 coding-guardrails server build                                          # builds cg's llama-server (pinned commit: llama.cpp 0.9.0-dev + DSpine draft support)
-coding-guardrails server start --model Qwen3.8-27B-UD-Q3_K_XL           # backend on :8080 (default — DSpine draft model attached; 100% completion / 99% accuracy)
+coding-guardrails server start --model Qwen3.8-27B-pi-adapted          # backend on :8080 (default — pi LoRA + DSpine draft, 160K ctx)
 coding-guardrails serve --backend-url http://localhost:8080 \
-  --model Qwen3.8-27B-UD-Q3_K_XL --port 8081                            # proxy on :8081
+  --model Qwen3.8-27B-pi-adapted --port 8081 --context-budget 120000    # proxy on :8081
+#
+# Other tiers: Qwen3.8-27B-UD-Q3_K_XL (base, no adapter), flint-UD-Q3_K_XL,
+# MiniCPM5-2B-Q4_K_M, LFM3-1.7B-Q8_0, Ornith-1.0-9B-Q8_0.
+# The pi-adapted profile is a 319 MB LoRA over the Qwen3.8-27B-UD-Q3_K_XL GGUF
+# (harness-hub, RL-trained inside the pi harness): fewer turns, terser tool calls.
+# Thinking is ON by default; Qwen3.8-27B-pi-adapted-nothink pins it off.
 
 # Point your agent at http://localhost:8081/v1
 ```
@@ -72,10 +78,10 @@ decoding, context size) per model — no flag archaeology.
 
 | Flag | Default | What it does |
 |------|---------|--------------|
-| `--auto-no-thinking` | on | Plain (no-tool) requests answer directly with thinking off. A request that explicitly opts in wins: `chat_template_kwargs.enable_thinking=true` or a `reasoning_effort` level. `--no-auto-no-thinking` leaves the template default (thinking on for reasoning models). Tool calls always keep thinking on. |
+| `--auto-no-thinking` | **off** | When ON, plain (no-tool) requests get `enable_thinking=false` forced on the wire. Default flipped to off 2026-11-19: the shipped model is `Qwen3.8-27B-pi-adapted`, whose reasoning is the point, and auto-stripping it from generation calls was surprising. A request can still opt in either way (`chat_template_kwargs.enable_thinking`, `reasoning_effort`). Tool calls always keep thinking on. Turn it back on for token-bound generation workloads. |
 | `--thinking-budget-tokens` | 4096 | Token cap on the reasoning block for plain-path thinking (0 disables). Prevents reasoning from eating `max_tokens` and returning an empty answer; the empty-after-thinking case still retries once with thinking off. |
 | `--reasoning-replay` | `keep-last` | How much model thinking reaches the agent: `keep-last` (thinking in the `reasoning_content` field), `full` (thinking as message content), `none` (observability only). forge ≥0.7.5 defaults to `none` — set this or thinking silently vanishes from responses. |
-| `--context-budget` | 12000 | Layer-1 compaction budget (tokens). Measured 2026-08-31: tool-calling collapses to prose at ~20–27K prompt tokens (Qwen3.8-27B through the proxy); `TieredCompact` fires at ~75% so sessions stay under the cliff. Raise only for text-heavy single-shot reads. Per-model override: `ModelProfile.context_budget` (Qwen3.8 measured → 12000). |
+| `--context-budget` | 12000 | Layer-1 compaction budget (tokens); `TieredCompact` fires at ~75%. The cliff behind this default is **model-specific**: the base Qwen3.8-27B collapses to prose at ~20–27K prompt tokens (measured 2026-08-31), but the pi-adapted LoRA holds tool calls to at least 98K (measured 2026-11-19: 24/24 backend-direct, 19/20 through the proxy) and ships `context_budget=120000`. Per-model override: `ModelProfile.context_budget`. |
 | `--convergence-nudge-after` | 0 (off) | Experimental finalize-now reminder after N tool-call turns. Measured NOT to fix open-ended task drift — bounded task templates do. |
 
 ## The 15 guardrail rules
@@ -301,7 +307,7 @@ limits; workspace root for path safety; secret patterns. Full reference in
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/ -q          # 794 tests (~25s)
+pytest tests/unit/ -q          # 810 tests (~25s)
 python eval/scripts/run_forge_eval.py --mode proxy --runs 5   # the eval behind the tables above
 ```
 

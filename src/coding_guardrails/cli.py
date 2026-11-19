@@ -43,8 +43,8 @@ def main() -> None:
               help="Seconds to wait for free VRAM before giving up (→ 503 → fleet L2 fallback). Default 120.")
 @click.option("--vram-margin", default=2.0, type=float,
               help="Safety margin (GB) of free VRAM required above the model's footprint before loading. Lower for tight GPUs with a known baseline; the model must still fit. Default 2.")
-@click.option("--auto-no-thinking/--no-auto-no-thinking", default=True,
-              help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. A request that explicitly opts in overrides this: chat_template_kwargs.enable_thinking=true or a reasoning_effort level. --no-auto-no-thinking leaves the model's template default (thinking on for reasoning models) and carries captured reasoning back per --reasoning-replay. Tool requests keep thinking on. Default on.")
+@click.option("--auto-no-thinking/--no-auto-no-thinking", default=False,
+              help="Auto-disable thinking (enable_thinking=false) for no-tool/generation requests — clean direct output instead of reasoning eating the token budget. A request that explicitly opts in overrides this: chat_template_kwargs.enable_thinking=true or a reasoning_effort level. Default OFF since 2026-11-19: the shipped default model is the pi-adapted Qwen3.8-27B, whose reasoning is the point — the proxy no longer silently strips it from generation calls. Turn it back on for token-bound generation workloads.")
 @click.option("--vision-captioning/--no-vision-captioning", default=True,
               help="Caption inbound images via the (multimodal) backend and substitute text blocks — the guardrails pipeline is text-only. Requires the backend to run with an mmproj. Default on.")
 @click.option("--convergence-nudge-after", default=0, type=int,
@@ -144,7 +144,7 @@ async def _run_proxy(
     idle_timeout: float = 90.0,
     queue_timeout: float = 120.0,
     vram_margin: float = 2.0,
-    auto_no_thinking: bool = True,
+    auto_no_thinking: bool = False,
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",
@@ -353,7 +353,7 @@ def list_models() -> None:
 
 @main.command("up")
 @click.option("-m", "--model", "models", multiple=True,
-              help="Model profile(s) to serve on demand. Repeat for a multi-model proxy, e.g. -m Qwen3.8-27B-UD-Q3_K_XL -m MiniCPM5-2B-Q4_K_M (defaults to Qwen3.5-9B-UD-Q4_K_XL when omitted).")
+              help="Model profile(s) to serve on demand. Repeat for a multi-model proxy, e.g. -m Qwen3.8-27B-UD-Q3_K_XL -m MiniCPM5-2B-Q4_K_M (defaults to Qwen3.8-27B-pi-adapted when omitted).")
 @click.option("--vram-margin", default=2.0, type=float, show_default=True,
               help="Free-VRAM margin (GB) above the model footprint required to load.")
 @click.option("--port", default=8081, type=int, show_default=True, help="Proxy port.")
@@ -370,7 +370,7 @@ def _up(models, vram_margin, port, backend_port, idle_timeout, queue_timeout):
     from coding_guardrails.server.proxy_process import pid_is_proxy, proxy_processes
 
     if not models:
-        models = ("Qwen3.5-9B-UD-Q4_K_XL",)
+        models = ("Qwen3.8-27B-pi-adapted",)
 
     # Only trust a pid file whose pid is verifiably a cg proxy. A stale file
     # with a recycled pid must not make `cg up` refuse to start forever.

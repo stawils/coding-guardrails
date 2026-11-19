@@ -127,19 +127,25 @@ Any agent that supports custom OpenAI API base URLs should work. Set:
 
 ## Thinking mode (plain/text requests)
 
-Tool-call requests already think by default. Plain (no-tool) requests answer
-**directly without thinking** by default (`--auto-no-thinking` ON): reasoning
-models like Qwen3.8-27B give instant clean answers instead of burning the
-budget on reasoning that used to be silently discarded. That default is
-unchanged.
+**Thinking is on by default, on both paths** (changed 2026-11-19). Tool-call
+requests always kept thinking; plain (no-tool) requests used to have it forced
+off, because reasoning models like the base Qwen3.8-27B would burn the budget on
+reasoning that was then discarded. The shipped model is now
+`Qwen3.8-27B-pi-adapted`, whose reasoning is the point, so `--auto-no-thinking`
+defaults to **off** and the proxy no longer rewrites `enable_thinking`.
 
-To use thinking on a plain request, opt in per request (any one works):
+Consequence to know about: a plain request now spends tokens thinking. Give a
+reasoning model a real `max_tokens` — with a small cap the model can think its
+way to an empty answer, and the proxy's one retry (thinking off) is what saves
+it, at the cost of the reasoning block.
+
+To force thinking OFF (token-bound generation), opt out per request (any one works):
 
 ```bash
 # 1) Simplest — model-native thinking on
 curl -s http://127.0.0.1:8081/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"Qwen3.8-27B-UD-Q3_K_XL",
+  -d '{"model":"Qwen3.8-27B-pi-adapted",
        "messages":[{"role":"user","content":"Design a migration plan for X"}],
        "chat_template_kwargs":{"enable_thinking":true}}'
 
@@ -164,7 +170,7 @@ Server-wide knobs:
 
 | Flag | Effect |
 |---|---|
-| `--no-auto-no-thinking` | Thinking stays on by default for plain requests |
+| `--auto-no-thinking` | Force `enable_thinking=false` on plain requests (default **off** since 2026-11-19) |
 | `--thinking-budget-tokens N` | Reasoning token cap for plain thinking (default 4096) |
 | `--reasoning-replay {full,keep-last,none}` | How reasoning is delivered: `keep-last` → `reasoning_content` field (default), `full` → merged into content, `none` → dropped |
 

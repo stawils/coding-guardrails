@@ -166,6 +166,58 @@ def _drafter_argv(profile, *, ngl: int) -> list[str]:
     ]
 
 
+def lora_path(repo_id: str, filename: str) -> Path:
+    """Where a LoRA adapter GGUF lives in cg's cache (mirrors download)."""
+    return models_dir() / repo_id.split("/")[-1] / filename
+
+
+def _resolve_lora(repo_id: str, filename: str) -> Path | None:
+    """Find a LoRA GGUF: its cg-cache slot first, then the read-only fallbacks."""
+    expected = lora_path(repo_id, filename)
+    if expected.exists():
+        return expected
+    for cache_dir in registry.FALLBACK_CACHE_DIRS:
+        if not cache_dir.exists():
+            continue
+        for candidate in cache_dir.rglob(filename):
+            return candidate
+    return None
+
+
+def _lora_argv(profile) -> list[str]:
+    """``--lora`` flags for a profile that declares an adapter.
+
+    A missing adapter is a warning, not a failure — same policy as the drafter,
+    because a dead always-on tier is worse than a serving-but-unadapted one.
+    The warning is deliberately explicit that behaviour is now the *base*
+    model's: silently serving the wrong model is the failure mode that matters
+    here, since picking this profile is a request for the adapted behaviour.
+    """
+    from coding_guardrails.server.sources import get_lora
+
+    source = get_lora(profile.lora)
+    if source is None:
+        logger.warning(
+            "profile %r references unknown LoRA %r — serving the BASE model "
+            "without the adapter",
+            profile.name,
+            profile.lora,
+        )
+        return []
+    path = _resolve_lora(source.repo_id, source.filename)
+    if path is None:
+        logger.warning(
+            "LoRA GGUF %s not found — serving %r as the BASE model, WITHOUT "
+            "the adapter. Run: cg server download %s",
+            source.filename,
+            profile.name,
+            profile.name,
+        )
+        return []
+    logger.info("LoRA adapter: %s", source.filename)
+    return ["--lora", str(path)]
+
+
 def build_argv(
     profile_name: str,
     *,
@@ -214,6 +266,8 @@ def build_argv(
         argv += ["--mmproj", str(mmproj)]
     if getattr(profile, "drafter", None):
         argv += _drafter_argv(profile, ngl=ngl)
+    if getattr(profile, "lora", None):
+        argv += _lora_argv(profile)
     if extra:
         argv.extend(extra)
     return argv

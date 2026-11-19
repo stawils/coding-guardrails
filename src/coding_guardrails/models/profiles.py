@@ -32,6 +32,10 @@ class ModelProfile:
     # VRAM is added on top of vram_required_gb by the backend manager's gate.
     spec_n_max: int | None = None  # override DRAFTERS[...].n_max (tokens
     # drafted per verify step); lower it to buy context on a tight GPU.
+    lora: str | None = None  # key into server/sources.py LORAS: a LoRA
+    # adapter the launcher attaches with --lora. Composes with `drafter`
+    # (verified together 2026-11-19); its VRAM is folded into
+    # vram_required_gb by the profile author, not added by the gate.
 
 
 # fmt: off
@@ -113,6 +117,91 @@ PROFILES: dict[str, ModelProfile] = {
         # DSpine drafts a
         # 16-token block but only n_max=4 is worth verifying here; n_max 15
         # costs 1.7 GB of context for no extra speed on a Q3 target.
+        drafter="Qwen3.8-27B-DSpine-b16-Q4_K_M",
+        spec_n_max=4,
+    ),
+    # ── Qwen3.8-27B-pi-adapted (LoRA over the UD-Q3_K_XL base above) ──
+    # harness-hub's RL adapter trained inside unmodified pi (AsyncGRPO + LoRA
+    # r=32 on all-linear), released 2026-11-06. Same base GGUF as the profile
+    # above — no second download; the adapter is a 319 MB F16 GGUF in LORAS.
+    # Card (corrected; pi harness, one attempt/task, 100 steps, thinking OFF):
+    #   SWE-bench Pro hard-51 39.2% -> 64.7%, Terminal-Bench 2.1 39.5% -> 55.8%,
+    #   turns per solved task 23 vs 59. Vendor scores are NOT comparable to the
+    #   Qwen3.8-27B card (different harnesses/budgets), so swe_bench_verified
+    #   stays None rather than borrowing a number from a different benchmark.
+    # Thinking: NOT pinned off. llama.cpp defaults to --reasoning auto, which
+    # reads the Qwen3.8 template and thinks — same as the base profile above, so
+    # switching profiles does not silently change the reasoning contract. The
+    # adapter was TRAINED thinking-off and its headline numbers are thinking-off,
+    # but the card also measured thinking-on: SWE-bench Pro 74.5% vs 64.7%, and
+    # Terminal-Bench 2.1 56.6% on both. So "off" buys ~4.5x fewer generated
+    # tokens and ~1/3 the model calls, it does NOT buy accuracy (card: +10 pts
+    # thinking-on, p=0.23 on 51 tasks). Use the -nothink sibling below when the
+    # token/latency budget is the binding constraint.
+    # Card sampling on a thinking-off run is the TRAINING sampling (temp 0.8,
+    # top_p 1.0), not the base model's 1.0/0.95/20 — kept here.
+    # MEASURED 2026-11-19 (RTX 3090 Ti, this quant): boots with the DSpine
+    #   drafter attached. Decode 60-63 tok/s vs 70.6 for the DSpine-only base
+    #   (~12% cost of LoRA in the verify graph); acceptance stayed 0.58-0.80.
+    #   End-to-end pi run fixed a failing 4-test repo in 67 s.
+    # CONTEXT: 160000, raised from 120000 after a local TTS server stopped and
+    #   freed ~1 GB. Measured KV cost on this profile (q4_0 K and V):
+    #   160K -> 21,068 MiB used / 1,517 free; 192K -> 21,880 / 704 free.
+    #   => ~26 KB per context token, so 192K boots but leaves under 0.7 GB on a
+    #   shared desktop (ComfyUI/browser spikes OOM it). 160K is the headroom
+    #   point. NOTE: this is the BACKEND window — the agent-visible context is
+    #   still capped by the proxy --context-budget (12000 here), which exists
+    #   because tool-calling degrades past ~20-27K prompt tokens.
+    "Qwen3.8-27B-pi-adapted": ModelProfile(
+        name="Qwen3.8-27B-pi-adapted",
+        family="Qwen3.8",
+        quant="UD-Q3_K_XL + pi LoRA (F16)",
+        file_size_gb=13.44 + 0.32,
+        vram_required_gb=16.9,  # target + ~0.3 adapter buffers, MEASURED
+        # 2026-11-19 @160K ctx with the drafter attached: 21,068 MiB used on a
+        # 2,375 MiB desktop baseline -> 18.25 GB incremental, minus the
+        # drafter's 1.4 (DRAFTERS) = 16.85 target+lora. Gate = 16.9+1.4=18.3.
+        context_tokens=160000,
+        context_budget=120000,  # PROBED 2026-11-19: the base model's
+        # 20-27K tool-call cliff does NOT reproduce on this adapter. Backend
+        # direct: 4/4 tool calls at 16K/24K/32K/49K/65K/98K prompt tokens
+        # (24/24). Through a proxy at --context-budget 120000: 19/20 over the
+        # same grid, the single miss uncorrelated with length (98K clean).
+        # TieredCompact fires at 75% -> ~90K prompts, inside the probed range.
+        # Backend window is 160000, leaving ~40K for completion.
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.8, "top_p": 1.0},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1"],
+        lora="Qwen3.8-27B-pi-adapted",
+        drafter="Qwen3.8-27B-DSpine-b16-Q4_K_M",
+        spec_n_max=4,
+    ),
+    # Same adapter, thinking pinned OFF: the mode the adapter was trained and
+    # benchmarked in (card: 4.5x fewer generated tokens, ~1/3 the model calls,
+    # level with the base model's xhigh thinking on Terminal-Bench 2.1, 10
+    # points behind on SWE-bench Pro hard-51). Pick this when a run is
+    # token/latency bound. Caveat: the proxy's 12000-token compaction budget is
+    # untouched by this profile — thinking-on runs can burn it before the agent
+    # finishes, which is one more reason to have the explicit off mode here.
+    "Qwen3.8-27B-pi-adapted-nothink": ModelProfile(
+        name="Qwen3.8-27B-pi-adapted-nothink",
+        family="Qwen3.8",
+        quant="UD-Q3_K_XL + pi LoRA (F16)",
+        file_size_gb=13.44 + 0.32,
+        vram_required_gb=16.9,
+        context_tokens=160000,
+        context_budget=120000,  # same probe as the main profile above
+        architecture="dense",
+        active_params_b=27.0,
+        swe_bench_verified=None,
+        sampling={"temperature": 0.8, "top_p": 1.0},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                     "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1",
+                     "--reasoning", "off"],
+        lora="Qwen3.8-27B-pi-adapted",
         drafter="Qwen3.8-27B-DSpine-b16-Q4_K_M",
         spec_n_max=4,
     ),

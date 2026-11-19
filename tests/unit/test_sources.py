@@ -4,10 +4,13 @@ import pytest
 
 from coding_guardrails.server.sources import (
     DRAFTERS,
+    LORAS,
     SOURCES,
     DrafterSource,
+    LoraSource,
     ModelSource,
     get_drafter,
+    get_lora,
     get_source,
 )
 
@@ -92,3 +95,60 @@ class TestDrafterSources:
             assert profile.drafter in DRAFTERS, (
                 f"{profile.name} references unregistered drafter {profile.drafter!r}"
             )
+
+
+class TestLoraSources:
+    """LoRA adapters are GGUFs applied over a specific target profile."""
+
+    def test_defaults_and_lookup(self) -> None:
+        spec = LoraSource(
+            repo_id="a/b", filename="l.gguf", base_profile="p", vram_gb=0.3,
+        )
+        assert spec.license == ""
+        assert spec.notes == ""
+        assert get_lora("nope") is None
+
+    def test_every_lora_is_well_formed(self) -> None:
+        for name, spec in LORAS.items():
+            assert spec.repo_id, f"repo_id empty for {name}"
+            assert spec.filename.endswith(".gguf"), f"bad filename for {name}"
+            assert spec.base_profile, f"base_profile empty for {name}"
+            assert 0 < spec.vram_gb < 4, f"implausible vram_gb for {name}"
+            assert get_lora(name) is spec
+
+    def test_profile_lora_references_a_known_entry(self) -> None:
+        from coding_guardrails.models.profiles import PROFILES
+
+        for profile in PROFILES.values():
+            if getattr(profile, "lora", None) is None:
+                continue
+            assert profile.lora in LORAS, (
+                f"{profile.name} references unregistered lora {profile.lora!r}"
+            )
+
+    def test_lora_base_profile_exists(self) -> None:
+        """An adapter is useless on the wrong base — the pairing must be real."""
+        from coding_guardrails.models.profiles import PROFILES
+
+        for name, spec in LORAS.items():
+            assert spec.base_profile in PROFILES, (
+                f"{name} declares base_profile {spec.base_profile!r}, which is "
+                "not a registered profile"
+            )
+
+    def test_lora_serving_profile_shares_its_base_gguf(self) -> None:
+        """The adapted profile must resolve to the adapter's base GGUF."""
+        from coding_guardrails.models.profiles import PROFILES
+
+        for profile in PROFILES.values():
+            lora_id = getattr(profile, "lora", None)
+            if lora_id is None:
+                continue
+            base = LORAS[lora_id].base_profile
+            adapted_src = get_source(profile.name)
+            base_src = get_source(base)
+            assert adapted_src is not None and base_src is not None
+            assert (adapted_src.repo_id, adapted_src.filename) == (
+                base_src.repo_id,
+                base_src.filename,
+            ), f"{profile.name} must download the same GGUF as {base}"

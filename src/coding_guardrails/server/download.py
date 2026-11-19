@@ -75,11 +75,37 @@ def target_path(profile_name: str) -> Path:
     return models_dir() / src.repo_id.split("/")[-1] / src.filename
 
 
+def lora_target_path(lora_id: str) -> Path:
+    """Where a LoRA adapter GGUF will live in the cg cache."""
+    from coding_guardrails.server.sources import get_lora
+
+    source = get_lora(lora_id)
+    if source is None:
+        raise KeyError(
+            f"no download source registered for LoRA {lora_id!r}. "
+            "Add an entry to server/sources.py LORAS."
+        )
+    return models_dir() / source.repo_id.split("/")[-1] / source.filename
+
+
+def download_lora(lora_id: str) -> Path:
+    """Download a LoRA adapter GGUF into the cg cache."""
+    from coding_guardrails.server.sources import get_lora
+
+    source = get_lora(lora_id)
+    if source is None:
+        raise KeyError(f"no download source registered for LoRA {lora_id!r}.")
+    return _fetch(source.repo_id, source.filename, lora_target_path(lora_id))
+
+
 def download(profile_name: str) -> Path:
     """Download the GGUF for ``profile_name`` into the cg cache.
 
     If the profile declares a speculative drafter, its GGUF is fetched too —
-    the launcher only enables speculation when that file is present.
+    the launcher only enables speculation when that file is present. A declared
+    LoRA adapter (``profile.lora``) is fetched as well; the target GGUF is the
+    same file the base profile uses, so an adapted profile costs only the
+    adapter download.
 
     Returns the path to the downloaded model. Re-downloads are skipped by
     huggingface_hub's cache only if its own cache is used; here we download
@@ -95,4 +121,6 @@ def download(profile_name: str) -> Path:
     profile = get_profile(profile_name)
     if profile is not None and profile.drafter:
         download_drafter(profile.drafter)
+    if profile is not None and getattr(profile, "lora", None):
+        download_lora(profile.lora)
     return _fetch(src.repo_id, src.filename, target_path(profile_name))

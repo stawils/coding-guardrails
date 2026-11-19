@@ -7,7 +7,8 @@ optimized for local inference with llama-server on consumer GPUs.
 
 | Model | Quant | Size | VRAM | Context | Active | Arch | Speed |
 |---|---|---|---|---|---|---|---|
-| **Qwen3.8-27B** ⭐ | UD-Q3_K_XL (**DSpine** draft) | 13.44 GB | 17.8 GB | **120K** (q4_0 KV) | 27B | Dense (hybrid) | **~84 tok/s** |
+| **Qwen3.8-27B-pi-adapted** ⭐ default | UD-Q3_K_XL + **pi LoRA** (**DSpine** draft) | 13.76 GB | 18.3 GB | **160K** (q4_0 KV) | 27B | Dense (hybrid) | ~60-63 tok/s |
+| Qwen3.8-27B (base, no adapter) | UD-Q3_K_XL (**DSpine** draft) | 13.44 GB | 17.8 GB | **120K** (q4_0 KV) | 27B | Dense (hybrid) | **~84 tok/s** |
 | **Qwen3.6-27B** | UD-Q4_K_XL | 17.9 GB | 19.5 GB | **48K** (q8_0 KV) | 27B | Dense (hybrid) | ~20-30 tok/s |
 | **Qwen3.5-9B** | UD-Q4_K_XL (MTP) | 5.7 GB | 18.1 GB | **200K** | 9B | Dense | ~53 tok/s |
 | **Gemma 4 26B A4B QAT** | UD-Q4_K_XL (QAT) | 14.25 GB | 19.8 GB | **200K** | 3.8B | MoE | ~40+ tok/s |
@@ -205,6 +206,64 @@ $LLAMA \
 - Vendor benchmarks vs Qwen3.6-27B: SWE-bench Pro 61.7 (vs 53.5), Terminal-Bench 2.1
   73.0 (vs 63.4), DeepSWE 1.1 42.2 (vs 13.3), QwenSWEBench 79.0 (vs 49.3),
   LiveCodeBench v6 90.3, GPQA Diamond 89.2.
+
+## Qwen3.8-27B-pi-adapted (DEFAULT — LoRA over Qwen3.8-27B, 160K context)
+
+A **319 MB F16 LoRA** over the `Qwen3.8-27B-UD-Q3_K_XL` base, released 2026-11-06 by
+harness-hub and RL-trained (TRL AsyncGRPO, LoRA r=32 alpha=64 on all linear layers,
+160 steps) **inside unmodified pi** on Harbor SWE/terminal tasks. It is not a new base
+model: it reuses the same 13.44 GB GGUF, so adopting it costs one small download.
+
+- Card (pi harness, one attempt/task, 100 steps, thinking off): **SWE-bench Pro hard-51
+  39.2% → 64.7%** (+25.5 ± 14.2, p=0.0023), **Terminal-Bench 2.1 39.5% → 55.8%**
+  (+16.3 ± 9.1, p=0.0013), turns per solved task **23 vs 59**. An earlier "29.4% → 62.7%"
+  was retracted by the authors (nine base-model rollouts died on a dead tunnel).
+- Thinking: **ON by default** (`--reasoning auto`). The adapter was trained thinking-off
+  and reasons in short visible bursts rather than hidden chains (`<think>` in <1 turn per
+  1,000). The card's own thinking-on run scored **74.5%** on SWE-bench Pro vs 64.7% off, at
+  ~4.5x the generated tokens — so off is the *cheap* mode, not the accurate one.
+  `Qwen3.8-27B-pi-adapted-nothink` pins `--reasoning off`.
+- Sampling: **temp 0.8, top_p 1.0** (the adapter's training sampling — not the base
+  model's 1.0/0.95/20).
+- Composes with the DSpine drafter. Verified 2026-11-19: adapter `scale 1.0` and
+  `draft-dflash n_max=4` in one process, acceptance 0.58-0.80, mean len 3.2-4.2.
+  Cost of the LoRA in the verify graph: **60-63 tok/s vs 70.6** (~12%).
+- **Context 160000** (raised from 120000 once a local TTS server freed ~1 GB). Measured
+  KV cost ~**26 KB per token**: 160K → 21,068 MiB used / ~1.4-1.5 GB free; 192K → 21,880
+  MiB / 704 MiB free (boots, but too tight on a shared desktop). Gate 16.9 + 1.4 drafter.
+- **`context_budget=120000`**, because the base model's tool-call cliff does not reproduce
+  here: 4/4 tool calls at 16K/24K/32K/49K/65K/98K prompt tokens backend-direct (24/24), and
+  19/20 through the proxy at a 120K budget (the single miss uncorrelated with length, 98K
+  clean). Compaction therefore fires at ~90K instead of ~9K.
+- Caveat: trained on BF16, served here at Q3_K_XL — treat the card's absolute numbers as
+  directional. `logprobs` are unavailable while the drafter is on.
+
+### Qwen3.8-27B-pi-adapted boot command
+
+```bash
+coding-guardrails server start -m Qwen3.8-27B-pi-adapted --wait
+coding-guardrails serve --backend-url http://localhost:8080 \
+  --model Qwen3.8-27B-pi-adapted --port 8081 --context-budget 120000
+```
+
+Raw equivalent (what the profile builds):
+
+```bash
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf \
+  --lora ~/.local/share/coding-guardrails/models/Qwen3.8-27B-pi-adapted-GGUF/Qwen3.8-27B-pi-lora-F16.gguf \
+  -md ~/models/dspine/Qwen3.8-27B-DSpine-b16-Q4_K_M.gguf \
+  --spec-type draft-dflash --spec-draft-n-max 4 --spec-draft-ngl 99 \
+  --spec-draft-type-k q8_0 --spec-draft-type-v q8_0 \
+  -c 160000 -ngl 99 --host 127.0.0.1 --port 8080 --jinja --flash-attn auto \
+  -ctk q4_0 -ctv q4_0 -np 1
+```
+
+Two operational notes: `--reasoning off` (not `--chat-template-kwargs
+'{"enable_thinking": false}'`, which llama.cpp now deprecates) is how the `-nothink`
+sibling is expressed; and a **missing** adapter file does not stop the boot — it logs
+"serving the BASE model, WITHOUT the adapter", because a dead always-on tier is worse
+than an unadapted one.
 
 ## Flint (MoE 39.8B-A2.5B — fast agentic-coding tier, 128K context, Apache-2.0)
 

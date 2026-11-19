@@ -393,7 +393,7 @@ async def handle_chat_completions(
     guardrails: CodingGuardrails,
     max_retries: int = 3,
     rescue_enabled: bool = True,
-    auto_no_thinking: bool = True,
+    auto_no_thinking: bool = False,
     vision_captioning: bool = True,
     convergence_nudge_after: int = 0,
     reasoning_replay: str = "keep-last",

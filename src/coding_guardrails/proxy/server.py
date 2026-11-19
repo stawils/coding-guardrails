@@ -53,7 +53,7 @@ class GuardrailProxyServer:
         rescue_enabled: bool = True,
         model_name: str = "coding-guardrails",
         backend_manager=None,  # optional coding_guardrails.server.manager.BackendManager
-        auto_no_thinking: bool = True,
+        auto_no_thinking: bool = False,
         vision_captioning: bool = True,
         convergence_nudge_after: int = 0,
         reasoning_replay: str = "keep-last",

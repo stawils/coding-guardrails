@@ -68,6 +68,22 @@ SOURCES: dict[str, ModelSource] = {
         filename="Qwen3.8-27B-UD-Q3_K_XL.gguf",
         license="Apache-2.0",
     ),
+    # The pi-adapted profile is a LoRA over the same UD-Q3_K_XL base — it has
+    # no GGUF of its own, so it points at the identical file (one download
+    # serves both profiles; the adapter is a separate 319 MB artifact, see
+    # LORAS below).
+    "Qwen3.8-27B-pi-adapted": ModelSource(
+        repo_id="unsloth/Qwen3.8-27B-GGUF",
+        filename="Qwen3.8-27B-UD-Q3_K_XL.gguf",
+        license="Apache-2.0",
+    ),
+    # Thinking-off sibling: same base GGUF and same adapter, only the reasoning
+    # flag differs (profiles.py pins --reasoning off there).
+    "Qwen3.8-27B-pi-adapted-nothink": ModelSource(
+        repo_id="unsloth/Qwen3.8-27B-GGUF",
+        filename="Qwen3.8-27B-UD-Q3_K_XL.gguf",
+        license="Apache-2.0",
+    ),
     "flint-UD-Q3_K_XL": ModelSource(
         repo_id="unsloth/flint-GGUF",
         filename="flint-UD-Q3_K_XL.gguf",
@@ -128,3 +144,68 @@ DRAFTERS: dict[str, DrafterSource] = {
 def get_drafter(drafter_id: str) -> DrafterSource | None:
     """Return the drafter source for an id, or None if unmapped."""
     return DRAFTERS.get(drafter_id)
+
+
+@dataclass(frozen=True)
+class LoraSource:
+    """A LoRA adapter (GGUF) applied on top of a profile's target model.
+
+    An adapter is trained against one specific base model and does nothing
+    useful on another, so ``base_profile`` records the profile whose GGUF it
+    must sit over; the launcher loads it with ``--lora <path>`` and the manager
+    gate adds ``vram_gb`` on top of the base footprint.
+
+    Unlike a drafter (which trades no quality for speed), an adapter changes
+    behaviour: Qwen3.8-27B-pi-adapted was RL-trained inside the pi harness and
+    is far terser and more tool-directed than the base. A missing file is
+    therefore a loud warning, not a silent fallback — the backend still boots
+    (an always-on tier must not die over an optional artifact), but it is
+    serving the *base* behaviour and the log says so.
+    """
+
+    repo_id: str
+    filename: str
+    base_profile: str
+    vram_gb: float  # adapter buffers + apply overhead, on top of the target
+    license: str = ""
+    notes: str = ""
+
+
+# Keyed by adapter id (referenced from ModelProfile.lora).
+LORAS: dict[str, LoraSource] = {
+    # harness-hub, released 2026-11-06: Qwen3.8-27B RL-trained (AsyncGRPO, TRL)
+    # inside unmodified pi — 750 scale800 + 300 TermGrade Harbor tasks, LoRA
+    # r=32 alpha=64 all-linear, 160 steps, thinking OFF at training time.
+    # Card (corrected, one attempt/task, pi harness, 100-step budget):
+    #   SWE-bench Pro hard-51 39.2% -> 64.7% (+25.5 +/- 14.2, p=0.0023),
+    #   Terminal-Bench 2.1 39.5% -> 55.8% (+16.3 +/- 9.1, p=0.0013).
+    #   Turns per solved task 23 vs 59 (SWE-Pro); generated tokens 6.9k vs 9.6k.
+    # MEASURED 2026-11-19 on this box (RTX 3090 Ti, UD-Q3_K_XL target): loads
+    #   together with the DSpine drafter — adapter scale 1.0 AND draft-dflash
+    #   n_max=4 in one process (acceptance 0.58-0.80, mean len 3.2-4.2).
+    #   Greedy A/B scale 0 vs 1 diverges (adapter picks read_file/path where the
+    #   base picks read/limit=100), so the adapter is genuinely applied under
+    #   speculation. Cost: decode 70.6 -> 60-63 tok/s (~12%) at 128K ctx, which
+    #   is the price of loading LoRA in the verify graph. End-to-end pi run
+    #   fixed a failing 4-test repo in 67s.
+    # Caveat: trained on BF16; the Q3_K_XL base is far from it, so absolute
+    #   card numbers will not reproduce here — the plumbing is verified, the
+    #   quality delta is not. logprobs are unavailable with the drafter on.
+    "Qwen3.8-27B-pi-adapted": LoraSource(
+        repo_id="harness-hub/Qwen3.8-27B-pi-adapted-GGUF",
+        filename="Qwen3.8-27B-pi-lora-F16.gguf",
+        base_profile="Qwen3.8-27B-UD-Q3_K_XL",
+        vram_gb=0.3,
+        license="Apache-2.0",
+        # Thinking defaults ON (`--reasoning auto` -> the Qwen3.8 template
+        # thinks), matching the base profile. The -nothink sibling pins
+        # `--reasoning off`, the mode the adapter was trained and benchmarked
+        # in: ~4.5x fewer generated tokens, but also ~10 points behind on
+        # SWE-bench Pro hard-51 (64.7 vs 74.5, card, p=0.23).
+    ),
+}
+
+
+def get_lora(lora_id: str) -> LoraSource | None:
+    """Return the adapter source for an id, or None if unmapped."""
+    return LORAS.get(lora_id)

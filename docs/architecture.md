@@ -54,12 +54,17 @@ Response flows back through both layers to agent
 
 Forge handles the "make it actually work" layer:
 
-- **Context budget (measured cliff):** the serving `ContextManager` budgets
-  `min(profile_ctx, profile.context_budget or --context-budget)` — default
-  12000 tokens (Qwen3.8-27B measured 2026-08-31: tool-calling collapses to
-  prose at ~20-27K prompt tokens; solid below ~11K; flaky 13-19K regardless
-  of temperature). TieredCompact fires at ~75%, keeping worker sessions under
-  the cliff. `--reasoning-replay keep-last` (default) delivers thinking to the
+- **Context budget (model-specific cliff):** the serving `ContextManager` budgets
+  `min(profile_ctx, profile.context_budget or --context-budget)`, default 12000
+  tokens, and TieredCompact fires at ~75%. That default encodes a *measurement of
+  one model*: the base Qwen3.8-27B collapses to prose at ~20-27K prompt tokens
+  (2026-08-31; solid below ~11K; flaky 13-19K regardless of temperature).
+  **It does not generalise.** Re-probed 2026-11-19 on `Qwen3.8-27B-pi-adapted`
+  (LoRA over the same base): 4/4 tool calls at 16K/24K/32K/49K/65K/98K prompt
+  tokens backend-direct (24/24 total), 19/20 through the proxy at a 120000 budget,
+  the single miss uncorrelated with length. That profile ships
+  `context_budget=120000` (compaction at ~90K). Long-horizon quality at 90K is
+  unmeasured; the probe only rules out prose fallback. `--reasoning-replay keep-last` (default) delivers thinking to the
   agent in `reasoning_content` — forge >=0.7.5's converter default `none`
   would silently drop it from the wire.
 - **Rescue parsing** — When the model outputs tool calls as text (not JSON),

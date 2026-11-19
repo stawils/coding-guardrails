@@ -58,9 +58,27 @@ async def _handle(body, client, **kw):
 
 
 class TestPlainThinkingPolicy:
-    async def test_auto_on_defaults_thinking_off(self) -> None:
-        client = _RecordingClient([TextResponse(content="direct answer")])
+    async def test_default_leaves_thinking_on_and_relays(self) -> None:
+        """Default flipped 2026-11-19: the shipped model is the pi-adapted
+        Qwen3.8-27B, whose reasoning is the point. No forced
+        enable_thinking=false on a no-tool request; captured reasoning reaches
+        the agent."""
+        client = _RecordingClient(
+            [TextResponse(content="direct answer")], last_thinking="2+2=4",
+        )
         result = await _handle(_PLAIN, client)
+        msg = result["choices"][0]["message"]
+        assert msg["content"] == "direct answer"
+        assert msg["reasoning_content"] == "2+2=4"
+        assert "enable_thinking" not in client.samplings[0].get(
+            "chat_template_kwargs", {}
+        )
+
+    async def test_auto_off_forced_for_token_bound_workloads(self) -> None:
+        """Opt-in auto-off still works for generation calls that would rather
+        not spend the budget on reasoning."""
+        client = _RecordingClient([TextResponse(content="direct answer")])
+        result = await _handle(_PLAIN, client, auto_no_thinking=True)
         msg = result["choices"][0]["message"]
         assert msg["content"] == "direct answer"
         assert "reasoning_content" not in msg

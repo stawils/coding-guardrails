@@ -1,5 +1,29 @@
 # Session History
 
+## 2026-11-19 — Qwen3.8-27B-pi-adapted (LoRA) becomes the default; thinking-on; 160K context
+
+- **New profile `Qwen3.8-27B-pi-adapted`** — the pi-adapted LoRA from harness-hub
+  (319 MB F16) over the existing `UD-Q3_K_XL` base, i.e. no second 13 GB download. RL-trained
+  inside unmodified pi. Card (corrected): SWE-bench Pro hard-51 39.2% -> 64.7%,
+  Terminal-Bench 2.1 39.5% -> 55.8%, turns per solved task 23 vs 59. Sibling
+  `Qwen3.8-27B-pi-adapted-nothink` pins `--reasoning off`.
+- **LoRA plumbing** mirrors the drafter path: `ModelProfile.lora` -> `LORAS` registry ->
+  `--lora` in `build_argv` -> `download_lora`. Missing adapter warns loudly and serves the
+  base model rather than refusing to boot.
+- **Thinking-on by default** (`--auto-no-thinking` flipped to off in `cli.py`,
+  `proxy/server.py` and `proxy/handler.py`): the proxy no longer forces
+  `enable_thinking=false` on no-tool requests, including for direct `_handle` callers.
+  Driven by the new default model, whose reasoning is the point.
+- **Context 120000 -> 160000** for the adapted profile after a local TTS server freed ~1 GB
+  (~26 KB VRAM per context token; 160K leaves ~1.4 GB free, 192K only 0.7 GB).
+- **`context_budget` 12000 -> 120000 for the adapted profile only.** The base model's
+  measured 2026-08-31 tool-call cliff (~20-27K prompt tokens) does NOT reproduce on the
+  adapter: 24/24 tool calls at 16K-98K backend-direct, 19/20 through the proxy at a 120K
+  budget. The base profile keeps 12000 — its cliff is real.
+- Verified: `cg server start -m Qwen3.8-27B-pi-adapted` boots adapter scale 1.0 + DSpine
+  n_max=4 together at 160K ctx (21.1 GB, ~1.4 GB free); end-to-end `pi --print` fixed a
+  failing 4-test repo in 67 s. Decode 60-63 tok/s vs 70.6 without the adapter. 810 tests.
+
 ## 2026-10-28 — v0.24.0: LFM3-1.7B (256K long-context tiny tier) + llama.cpp pin bump
 - **Pin bump**: `d77256999` → `39febd2ad` (llama.cpp 0.8.0-dev) for `LLM_ARCH_LFM3`
   (#31252 text+VL, #31257 audio+omni, #31283 video input). Rebuilt, `cg server version`
