@@ -16,7 +16,7 @@ from forge.clients.base import LLMClient
 from forge.context.manager import ContextManager
 
 from coding_guardrails.middleware import CodingGuardrails
-from coding_guardrails.proxy.handler import handle_chat_completions
+from coding_guardrails.proxy.handler import attach_usage, handle_chat_completions
 
 logger = logging.getLogger("coding_guardrails.server")
 
@@ -290,7 +290,9 @@ class GuardrailProxyServer:
         if is_stream:
             await self._send_sse_body(writer, result)
         else:
-            await self._send_json(writer, 200, json.dumps(result))
+            # The proxy re-serializes the response, so the backend's usage
+            # object is not carried through on its own — attach it here.
+            await self._send_json(writer, 200, json.dumps(attach_usage(result, self._client)))
 
     async def _await_with_disconnect(
         self, item: _QueueItem, writer: asyncio.StreamWriter,

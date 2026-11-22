@@ -19,6 +19,7 @@ from coding_guardrails.rules.base import (
     RuleResult,
     ToolCall,
 )
+from coding_guardrails.rules.bash_writes import extract_writes, shell_tool_args
 from coding_guardrails.rules.commands import CommandSafetyRule
 from coding_guardrails.rules.loop_detection import LoopDetectionRule
 from coding_guardrails.rules.network import NetworkRule
@@ -346,6 +347,36 @@ class CodingGuardrails:
             input_scanning=InputScanRule(),
         )
 
+    #: Rules that gate file edits and can therefore judge a write hidden in a
+    #: shell command. Anything else (command_safety, network, loop_detection,
+    #: session_budget, ...) already saw the raw command and must not double-fire.
+    _EDIT_CLASS_RULES = ("prerequisites", "path_safety", "sensitive_files", "dup_write", "lint")
+
+    def _shell_writes_as_edits(self, call: ToolCall) -> list[ToolCall]:
+        """Project file writes hidden in a shell command into edit-class calls.
+
+        `cat > f <<'EOF' ... EOF` performs a write without ever touching the
+        write/edit tools, so prerequisites/lint/dup_write/path_safety never see
+        it. Returns synthetic ``write`` ToolCalls for those writes (empty list
+        when the call is not a shell call or writes nothing).
+        """
+        tool_lower = call.tool.lower()
+        if not any(kw in tool_lower for kw in ("bash", "shell", "exec", "run", "command")):
+            return []
+        command = shell_tool_args(call.args)
+        if not command:
+            return []
+        out: list[ToolCall] = []
+        for write in extract_writes(command):
+            path = write.path
+            if not path:
+                continue
+            args: dict = {"path": path}
+            if write.content is not None:
+                args["content"] = write.content
+            out.append(ToolCall(tool="write", args=args))
+        return out
+
     def _active_rules(self) -> list[Rule]:
         """Return list of non-None rules."""
         return [r for r in [
@@ -420,6 +451,46 @@ class CodingGuardrails:
                     if debug and annotated.nudge:
                         logger.debug("    message: %s", _short(annotated.nudge))
 
+            # Edit-class coverage for writes hidden in shell commands: a
+            # `cat > f <<EOF` performs a write the write/edit tools never saw.
+            # Re-run only the edit-gating rules on the projected writes so
+            # lint/prerequisites/dup_write/path_safety still apply, without
+            # double-firing the command-level rules that already saw the string.
+            if not call_blocked:
+                for synthetic in self._shell_writes_as_edits(call):
+                    for rule in rules:
+                        if rule.name not in self._EDIT_CLASS_RULES:
+                            continue
+                        projected = rule.check(synthetic)
+                        annotated = replace(projected, rule_name=rule.name)
+                        if annotated.action == Action.BLOCK:
+                            wrapped = replace(
+                                annotated,
+                                reason=(f"shell write to {synthetic.args.get('path')} "
+                                        f"({annotated.reason or 'policy violation'})"),
+                                nudge=(annotated.nudge or
+                                       "Blocked: this shell command writes a file "
+                                       "that an edit rule rejects."),
+                            )
+                            result.blocked.append(wrapped)
+                            call_blocked = True
+                            logger.info(
+                                "BLOCK %s | %s - shell write -> %s",
+                                _fmt_call(call), rule.name,
+                                synthetic.args.get("path"),
+                            )
+                            break
+                        if annotated.action == Action.NUDGE:
+                            call_nudges.append(annotated)
+                            result.nudges.append(annotated)
+                            logger.info(
+                                "NUDGE %s | %s - shell write -> %s",
+                                _fmt_call(call), rule.name,
+                                synthetic.args.get("path"),
+                            )
+                    if call_blocked:
+                        break
+
             # Debug: single summary line per call
 
             if not call_blocked:
@@ -448,8 +519,11 @@ class CodingGuardrails:
         Args:
             calls: Tool calls that were executed.
         """
+        expanded: list[ToolCall] = list(calls)
+        for call in calls:
+            expanded.extend(self._shell_writes_as_edits(call))
         for rule in self._active_rules():
-            rule.record(calls)
+            rule.record(expanded)
 
     def reset_conversation_state(self) -> None:
         """Reset per-conversation state on every stateful rule.

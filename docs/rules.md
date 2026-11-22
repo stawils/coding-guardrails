@@ -9,6 +9,26 @@ coding-guardrails ships with 15 guardrail rules, each independently configurable
 - All rules can be **disabled** individually via config
 - Tool name matching uses **prefix matching** — `edit` matches `edit`, `edit_file`, `Edit`, etc.
 
+### Shell writes are edit-class
+
+Rules that gate file writes (`path_safety`, `sensitive_files`, `prerequisites`,
+`dup_write`, `lint`) also judge writes performed **inside a shell command**:
+`cat > f <<'EOF' … EOF`, `cat >> f`, `tee [-a] f <<EOF`, `echo … > f`,
+`printf … >> f`, and bare `> f` / `>> f`. The middleware projects each detected
+write into a synthetic `write(path, content)` call and re-runs only those rules
+on it, so a heredoc into `.git/config` blocks on `sensitive_files` exactly like
+`edit(".git/config")` would.
+
+Command-level rules (`command_safety`, `network`, `loop_detection`,
+`session_budget`, …) are deliberately **not** re-run on the projection — they
+already saw the command string, and double-firing would double-count.
+
+Extraction lives in `rules/bash_writes.py` and is deliberately conservative:
+recognized shapes only, `[]` when unsure, `/dev/*` and `2>&1` ignored. A false
+positive here would block legitimate work, so an exotic spelling loses coverage
+rather than gaining a block.
+
+
 ---
 
 ## 1. Path Safety (`path_safety`)

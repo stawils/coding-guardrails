@@ -67,6 +67,69 @@ def _fmt_elapsed(seconds: float) -> str:
         return f"{seconds * 1000:.0f}ms"
     return f"{seconds:.1f}s"
 
+
+def attach_usage(payload: Any, client: Any) -> Any:
+    """Copy the backend's token counts onto an outgoing OpenAI payload.
+
+    The proxy re-serializes forge's validated response instead of relaying the
+    backend body, so the ``usage`` object was dropped and every client saw
+    ``0/0/0`` -- which silently breaks agent token accounting and cost reports.
+    forge already normalizes the backend's numbers into ``client.last_usage``
+    (keyed by slot); copy them here at the boundary.
+
+    Deliberately conservative:
+    - non-dict payloads (SSE event lists) are returned untouched;
+    - a payload that already carries a non-zero total is left alone, so a
+      backend that does report usage end-to-end is never second-guessed;
+    - if forge captured nothing (backend without a usage field), the payload
+      keeps its zeros rather than inventing counts.
+
+    Caveat, documented rather than hidden: ``last_usage`` holds the LAST attempt
+    of a request, so a request that Forge retried reports the final attempt's
+    tokens, not the sum across attempts. Reporting the last attempt beats
+    reporting zero, but it is not an exact bill.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    existing = payload.get("usage")
+    if isinstance(existing, dict) and (existing.get("total_tokens") or 0) > 0:
+        return payload
+
+    raw = getattr(client, "last_usage", None)
+    if not isinstance(raw, dict) or not raw:
+        return payload
+
+    usage = raw.get(0)
+    if usage is None:
+        usage = next(iter(raw.values()), None)
+    if usage is None:
+        return payload
+
+    def _count(name: str) -> int:
+        if isinstance(usage, dict):
+            return int(usage.get(name) or 0)
+        return int(getattr(usage, name, 0) or 0)
+
+    prompt = _count("prompt_tokens")
+    completion = _count("completion_tokens")
+    total = _count("total_tokens") or (prompt + completion)
+    if prompt == 0 and completion == 0:
+        return payload
+
+    out = {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
+    }
+    # Anthropic-style cache counters, carried when the backend reports them.
+    cached = _count("cache_read_input_tokens")
+    if cached:
+        out["prompt_tokens_details"] = {"cached_tokens": cached}
+
+    payload["usage"] = out
+    return payload
+
 # OpenAI-compatible top-level body fields plumbed from inbound to client.
 # Note: max_tokens / n_predict are handled by SafeLlamafileClient, not here.
 _SAMPLING_FIELDS = (
