@@ -39,6 +39,39 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 | **MiniCPM5-2B** | **150/150 (100%)** | **128/150 (85%)** — tool_selection 5/5 (fixes LFM2.5 0/5); data_gap_recovery_extended 100% | 2026-09-08_111510Z |
 | **LFM3-1.7B** | 144/150 (96%) | 129/150 (86%) — ties MiniCPM5 on accuracy at 2/3 the params and 2x ctx, but ~2x wall time; 4 of 6 misses are one retry-context quoting quirk | 2026-10-28_143636Z |
 
+### Wall time, and the trap in comparing it
+
+All 150-run evals, proxy mode, same box. **These are not interchangeable baselines** —
+see the note under the table.
+
+| Model / config | Run | Wall | vs 08-15 base |
+|---|---|---|---|
+| Qwen3.8-27B (no drafter) | 2026-08-15_000804Z | 2276.9 s (37.9 min) | 1.00x |
+| Qwen3.8-27B (no drafter, DSpine-era control) | 2026-11-09_084814Z | 3846.6 s (64.1 min) | **1.69x** |
+| Qwen3.8-27B + DSpine, 120K q4_0 | 2026-11-09_101147Z | 2030.7 s (33.8 min) | 0.89x |
+| Qwen3.8-27B + DSpine, 98K q8_0 | 2026-11-09_081753Z | 1781.2 s (29.7 min) | 0.78x |
+| **Inkling 2 Mini IQ4_NL** | 2026-11-22_155839Z | **4172.8 s (69.5 min)** | 1.83x |
+| Qwen3.6-27B UD-Q4_K_XL | 2026-08-07_151927Z | 6958.0 s (116.0 min) | — |
+| Ornith-1.0-9B Q8_0 | 2026-08-08_144837Z | 2731.7 s (45.5 min) | — |
+| Qwen3.5-9B UD-Q4_K_XL | 2026-08-08_142633Z | 1278.2 s (21.3 min) | — |
+| Flint UD-Q3_K_XL | 2026-10-22_144116Z | 1438.0 s (24.0 min) | — |
+| LFM3-1.7B Q8_0 | 2026-10-28_143636Z | 1444.2 s (24.1 min) | — |
+| LFM2.5-2.6B BF16 | 2026-08-08_153811Z | 1755.7 s (29.3 min) | — |
+| MiniCPM5-2B Q4_K_M | 2026-09-08_111510Z | 765.5 s (12.8 min) | — |
+
+**The DSpine number is 1.89x only against its own same-day control** (3846.6 s ->
+2030.7 s). Against the 08-15 un-drafted run it looks like a mere 1.12x — because the
+un-drafted baseline itself got **1.69x slower** between 08-15 and 11-09. Iteration
+counts are identical across those runs (basic_2step 2.0 everywhere, argument_fidelity
+3.0, compaction_chain 10.0), so it is not extra retries: the per-turn cost changed
+(prompt length / context budget / KV type all differed between the two eras).
+
+That difference is **not attributable from the artifacts**: `run.json` records the
+model and wall time but not `context_tokens`, `context_budget`, KV type or boot flags.
+Any cross-date wall-time comparison in this repo is therefore unattributed — compare
+only runs whose profile you can state, or record the config first.
+
+
 Shared weakness across the smaller models: data-heavy recovery scenarios
 (`data_gap_recovery_extended`, `argument_transformation`, `inconsistent_api_recovery`,
 `grounded_synthesis` score ~0-60% accuracy; LFM2.5 0%). **Qwen3.8-27B closes that

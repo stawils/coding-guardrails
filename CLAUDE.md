@@ -406,10 +406,11 @@ python eval/scripts/run_security_eval.py --exfil-battery -v \
 Results go to `eval/runs/<timestamp>/` (gitignored).
 
 **Best result: 150/150 completion (100%) AND 150/150 accuracy (100%)** — Inkling 2 Mini
-(26.4B/3.4B-active looped MoE) on 2026-11-22, 69.5 min wall, every one of the 30 scenarios
-5/5. It trades ~2x the wall time of Qwen3.8-27B+DSpine (33.8 min, 149/150) for the last
-correctness point, and holds tool-calling to 98K ctx (10/10) where base Qwen3.8-27B fell
-back to prose at ~20-27K. See docs/models.md — Inkling 2 Mini.
+(26.4B/3.4B-active looped MoE) on 2026-11-22, 69.5 min wall (4172.8s), every one of the 30
+scenarios 5/5. It is the slowest full run on record — 1.83x the 2026-08-15 Qwen3.8-27B
+baseline (37.9 min) and 2.05x Qwen3.8-27B+DSpine (33.8 min) — and it holds tool-calling to
+98K ctx (10/10) where base Qwen3.8-27B fell back to prose at ~20-27K. See docs/models.md
+— Inkling 2 Mini, and its wall-time table for the baseline caveat.
 
 Previous bests — **150/150 completion (100%)** on Forge 30-scenario eval (Qwen3.5-9B + Ornith,
 re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
@@ -417,9 +418,15 @@ that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.
 (92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.
 **Qwen3.8-27B + DSpine (v0.26.0 default; v0.27.0 adds the pi LoRA on top): 150/150 completion, 149/150 correctness (99%),
 33.8 min wall on the shipped profile (120K ctx, q4_0 KV, managed proxy) / 29.7 min at 98K
-q8_0 KV** — the same target GGUF and harness without the drafter takes 64.1 min
-(150/150, 146/150), so DSpine is a clean **1.89x on the production path, 2.16x at 98K**
+q8_0 KV** — the same-day control without the drafter takes 64.1 min
+(150/150, 146/150), so DSpine is **1.89x against its own control**, 2.16x at 98K,
 at no accuracy cost.
+⚠️ **Do not compare that 1.89x across dates.** The 2026-08-15 un-drafted run of the
+same model took **37.9 min** (2276.9s), i.e. the un-drafted baseline itself is 1.69x
+slower by 11-09 — with identical iteration counts, so it is per-turn cost (prompt
+length / context budget / KV type), not retries. `run.json` does not record ctx,
+context_budget or boot flags, so the cause is **unattributed**; only compare runs whose
+profile you can state. Wall-time table with run IDs: docs/models.md.
 **MiniCPM5-2B (added v0.20.0 as the tiny tier): 150/150 (100%) completion, 128/150 (85%) accuracy**
 — tool_selection 5/5 (+stateful) and data_gap_recovery_extended 100% fix LFM2.5's genuine gaps;
 only argument_transformation (0-20%) and inconsistent_api_recovery (40%) stay weak.
