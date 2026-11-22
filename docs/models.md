@@ -16,6 +16,7 @@ optimized for local inference with llama-server on consumer GPUs.
 | **Flint** | UD-Q3_K_XL | 18.49 GB | 19.9 GB | **128K** (q8_0 KV) | 2.5B | MoE (39.8B total) | ~107 tok/s |
 | **LFM2.5-2.6B** | **BF16** | 5.4 GB | 9.0 GB | **128K** | 2.6B | Dense (hybrid) | ~fast (tiny) |
 | **MiniCPM5-2B** | Q4_K_M | 1.56 GB | ~3.0 GB | **131K** | 2.52B | Dense | ~182 tok/s |
+| **Inkling 2 Mini** | IQ4_NL | 17.63 GB | 19.0 GB | **98K** (q4_0 KV) | 5.4B (26.4B total) | MoE (looped 3x) | ~40-53 tok/s |
 | **LFM3-1.7B** | Q8_0 | 1.72 GB | ~4.5 GB | **256K** (q8_0 KV) | 1.73B | Dense (tri-hybrid) | ~150 tok/s |
 
 ## Forge eval results (150 runs, proxy mode)

@@ -192,6 +192,30 @@ $LLAMA \
 #   (MTP is still available as a fallback: --spec-type draft-mtp --spec-draft-n-max 2,
 #   but it is ~2x slower than DSpine on this hardware.)
 
+# Inkling 2 Mini (looped MoE — best measured accuracy, 98K ctx on 24 GB)
+#   Thinking Machines Lab, released 2026-11-20, Apache-2.0. 26.4B total /
+#   3.4B active; the middle 12 of 24 layers run THREE times with shared weights
+#   (48 layer applications/token, arch `inkling2_loop`). 8-of-128 experts,
+#   hybrid sliding-window + full attention, 1M-native ctx.
+#   MEASURED 2026-11-22 (Forge 150 runs, proxy mode): 150/150 completion,
+#   150/150 accuracy (100%) in 69.5 min — best accuracy on the harness, but
+#   2.05x the wall time of Qwen3.8-27B+DSpine (33.8 min). tool_selection 5/5
+#   (Flint scored 40% there). Long-context probe: 10/10 tool calls 2K-98K.
+#   PPL 6.73 (-fa off) / 6.76 (-fa on): upstream CUDA-NaN bug #32710 does NOT
+#   reproduce here without its `-ncmoe 8`.
+#   VRAM: 17.63 GB weights, 20.1-21.0 GB used @32K-163K (q4_0 KV). -ub 128 is
+#   load-bearing: at the default ubatch the compute buffer reached ~13.5 GB at
+#   128K elsewhere and silently pushed the model onto the CPU.
+#   GGUF SOURCE: ggml-org ONLY on this pin. The pin predates upstream #32704,
+#   so Unsloth's NVFP4 quants run passes 2-3 unscaled and emit gibberish
+#   (PPL ~168) while still loading at full speed.
+#   No drafter: Inkling's DSpark draft needs upstream #32218 (open).
+#   Manager (preferred): cg server start -m Inkling-2-Mini-IQ4_NL
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/Inkling-2-Mini-GGUF/Inkling-2-Mini-IQ4_NL.gguf \
+  -c 98304 -ngl 99 --host 127.0.0.1 --port 8080 \
+  --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 -ub 128 -np 1 -v
+
 # Flint UD-Q3_K_XL (fast MoE tier — 39.8B total / 2.5B active, 128K ctx)
 #   Recursive Flint, released 2026-10-21, Apache-2.0. 49 layers (2 dense + 47 MoE,
 #   256 routed experts, 6/token + shared expert); 35 sliding-window (513) + 14
