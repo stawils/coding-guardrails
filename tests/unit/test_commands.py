@@ -87,6 +87,18 @@ class TestBlockedPatterns:
         # Credential theft
         "cat /etc/shadow",
         "cat /root/.ssh/id_rsa",
+        # VCS history wipe — was only an advisory before 2026-11-22
+        "rm -rf .git",
+        "rm -rf /home/tsuser/AI/coding-guardrails/.git",
+        "rm -fr repo/.git/",
+        "rm --recursive --force .hg",
+        "rm -r -f x/.svn",
+        "git status && rm -rf .git",
+        # $HOME spelled as a variable (`rm -rf ~` is a blocked prefix)
+        "rm -rf $HOME",
+        'rm -rf "$HOME"',
+        "rm -rf ${HOME}",
+        "rm -rf $HOME/*",
     ])
     def test_blocked_pattern(self, rule, cmd):
         result = _check(rule, cmd)
@@ -98,11 +110,16 @@ class TestConfirmationNudges:
 
     @pytest.mark.parametrize("cmd", [
         "rm -rf build/",
+        "rm -rf node_modules",
+        "rm -rf ./dist",
+        "rm -rf /tmp/scratch",
+        "rm -rf .github",
         "DROP TABLE users;",
         "DELETE FROM users;",
         "TRUNCATE TABLE logs;",
     ])
     def test_nudge_commands(self, rule, cmd):
+        """A recursive force-delete of a build dir must stay advisory only."""
         result = _check(rule, cmd)
         assert result.action == Action.NUDGE, f"Should nudge: {cmd}"
 

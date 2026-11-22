@@ -405,7 +405,13 @@ python eval/scripts/run_security_eval.py --exfil-battery -v \
 
 Results go to `eval/runs/<timestamp>/` (gitignored).
 
-**Best result: 150/150 completion (100%)** on Forge 30-scenario eval (Qwen3.5-9B + Ornith,
+**Best result: 150/150 completion (100%) AND 150/150 accuracy (100%)** — Inkling 2 Mini
+(26.4B/3.4B-active looped MoE) on 2026-11-22, 69.5 min wall, every one of the 30 scenarios
+5/5. It trades ~2x the wall time of Qwen3.8-27B+DSpine (33.8 min, 149/150) for the last
+correctness point, and holds tool-calling to 98K ctx (10/10) where base Qwen3.8-27B fell
+back to prose at ~20-27K. See docs/models.md — Inkling 2 Mini.
+
+Previous bests — **150/150 completion (100%)** on Forge 30-scenario eval (Qwen3.5-9B + Ornith,
 re-eval 2026-08-08 under v0.16.1 — the old "93% (140/150)" included the v0.7.4 respond() bug
 that zeroed tool_selection for every model). Qwen3.6-27B: 149/150 (99.3%); LFM2.5: 139/150
 (92.7%). Accuracy: Ornith 95%, Qwen3.6-27B 94%, Qwen3.5-9B 92%, LFM2.5 71%.

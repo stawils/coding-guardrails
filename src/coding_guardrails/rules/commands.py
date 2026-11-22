@@ -161,6 +161,18 @@ class CommandSafetyRule:
         r"\bProxyCommand\s*[= ]",
         r"ssh\s+[^|]*\$\(",   # local command substitution on ssh line
         r"docker\s+(?:run|exec)[^|]*\s(?:-e|--env)[=\s]\s*(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|BASH_ENV)\s*=",
+        # Recursive-force delete of VCS metadata. Added 2026-11-22 after an
+        # agent emitted `rm -rf <repo>/.git` and only got an advisory nudge:
+        # `blocked` above hard-blocks root/home targets, so a workspace-scoped
+        # history wipe fell through to `require_confirmation`. Deleting .git
+        # destroys unpushed history irrecoverably and no agent task needs it.
+        # Flags are matched in any spelling/order (rm -rf, -fr, -r -f,
+        # --recursive --force); plain `rm -rf build/` stays advisory.
+        r"(?<![\w'\"])rm\b(?=[^\n|;&]*\s-{1,2}[a-zA-Z-]*r)(?=[^\n|;&]*\s-{1,2}[a-zA-Z-]*f)"
+        r"[^\n|;&]*\.(?:git|hg|svn)(?:[\s\"'/]|$)",
+        # Same, for $HOME spelled as a variable (`rm -rf ~` is in `blocked`).
+        r"(?<![\w'\"])rm\b(?=[^\n|;&]*\s-{1,2}[a-zA-Z-]*r)(?=[^\n|;&]*\s-{1,2}[a-zA-Z-]*f)"
+        r"[^\n|;&]*\s[\"']?\$(?:\{HOME\}|HOME)(?:[\s\"'/]|$)",
     ])
 
     require_confirmation: list[str] = field(default_factory=lambda: [

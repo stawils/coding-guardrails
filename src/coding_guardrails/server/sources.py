@@ -94,6 +94,19 @@ SOURCES: dict[str, ModelSource] = {
         filename="Qwen3.6-27B-UD-Q4_K_XL.gguf",
         license="Apache-2.0",
     ),
+    # Inkling 2 Mini (Thinking Machines Lab, 2026-11-20). MUST be the ggml-org
+    # quant, not Unsloth's: the pinned llama.cpp (4703b7d6) predates upstream
+    # #32704, so Unsloth's NVFP4 quants run passes 2-3 of the looped layers
+    # without per-expert scales and emit gibberish (PPL ~168 vs ~8.5) while
+    # still loading and generating at normal speed. ggml-org quants carry no
+    # such scales and are unaffected (PPL 7.6931 before and after #32704).
+    # Unsloth's UD-Q3_K_XL (13.63 GB) becomes usable after a rebase onto
+    # >= 690b87d, or once DSpine PR #31941 merges and the pin returns upstream.
+    "Inkling-2-Mini-IQ4_NL": ModelSource(
+        repo_id="ggml-org/Inkling-2-Mini-GGUF",
+        filename="Inkling-2-Mini-IQ4_NL.gguf",
+        license="Apache-2.0",
+    ),
 }
 
 

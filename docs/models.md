@@ -28,7 +28,8 @@ LFM2.5's tool_selection 0/10 is **genuine** (never calls respond()).
 
 | Model | Completion | Accuracy | Run |
 |---|---|---|---|
-| **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** — best | 2026-08-15_000804Z |
+| **Inkling-2-Mini (IQ4_NL)** | **150/150 (100%)** | **150/150 (100%)** — best accuracy on record | 2026-11-22_155839Z |
+| **Qwen3.8-27B (default)** | **150/150 (100%)** | **148/150 (99%)** | 2026-08-15_000804Z |
 | **Qwen3.8-27B + DSpine** | **150/150 (100%)** | **149/150 (99%)** | 2026-11-09_081753Z |
 | **Qwen3.5-9B** | **150/150 (100%)** | 138/150 (92%) | 2026-08-08_142633Z |
 | **Ornith-1.0-9B** | **150/150 (100%)** | **143/150 (95%)** | 2026-08-08_144837Z |
@@ -304,6 +305,59 @@ $LLAMA \
   --jinja --flash-attn auto -ctk q8_0 -ctv q8_0 -np 1
 # ~107 tok/s decode, ~20 GB VRAM. Reasoning model — keep max_tokens generous
 # (hard problems: >= 32K output budget per the model card).
+```
+
+## Inkling 2 Mini (IQ4_NL — looped MoE, 98K context, best Forge accuracy)
+
+- Thinking Machines Lab, released 2026-11-20, **Apache-2.0**. **26.4B total /
+  3.4B active** (5.4B effective). A 24-layer MoE whose **middle 12 layers run
+  three times with shared weights** — 48 layer applications per token from 24
+  stored layers (arch `inkling2_loop`). 8-of-128 experts per layer, hybrid
+  sliding-window (1024) + full attention, **natively multimodal**, 1M ctx.
+- **Measured 2026-11-22 (Forge eval, proxy mode, 150 runs): 150/150 completion,
+  150/150 accuracy (100%) — the best accuracy on this harness, 69.5 min wall.**
+  Every scenario 5/5 at 100%, including all `compaction_chain_*`, every
+  `data_gap_*` and all `*_stateful` families. Wall time is ~2x Qwen3.8-27B+DSpine
+  (33.8 min): the model reasons more per turn.
+- **Long context does NOT collapse.** `probe_longctx.py` against :8080 direct:
+  **10/10 tool-call successes at 2K/16K/32K/65K/98K**, `finish_reason=tool_calls`
+  every time, no prose fallback. This is the opposite of the base Qwen3.8-27B
+  cliff (~20-27K) — do not inherit that belief here.
+- **PPL 6.7260 (`-fa off`) / 6.7618 (`-fa on`)** on cg's own docs. Upstream CUDA
+  NaN bug #32710 does NOT reproduce on this 3090 Ti without its `-ncmoe 8` flag.
+- **Cost is prefill, not decode:** 426 t/s prefill (19K prompt ≈ 45 s to first
+  token, ~150 s at 98K) vs 39-53 t/s decode. A long agent transcript pays that
+  every turn; llama-server's prompt cache only covers the shared prefix.
+- **Thinking cannot be fully suppressed cheaply.** `reasoning_effort` in
+  `chat_template_kwargs` works ("none" → 80 tokens + correct content on a
+  factual ask), but a coding prompt at `max_tokens=700` spent all 700 on
+  reasoning and returned EMPTY content. Budget output tokens generously. The
+  template also preserves reasoning across turns by default
+  (`--no-reasoning-preserve` disables it).
+- **VRAM:** 17.63 GB IQ4_NL; measured **20,070 MiB @32K / 20,905 @98K /
+  21,030 @163K** used (2.1 GB desktop) → 17.9-18.9 GB incremental. 16.33 GB of
+  weights on CUDA0 + 0.47 GB host-mapped. Profile gate = 19.0 GB.
+- **`-ub 128` is load-bearing.** At the default ubatch the compute buffer
+  reached ~13.5 GB at 128K on other setups and silently pushed the model onto
+  the CPU. With `-ub 128`: 838 MiB @32K, 2.4 GB @98K.
+- **No drafter.** Inkling's DSpark draft needs upstream #32218 (open) and this
+  pin rejects that GGUF (`markov_w1` shape / unknown head tensors).
+- **GGUF source matters.** The pin (`4703b7d6`) predates upstream #32704, so
+  **Unsloth's NVFP4 quants emit gibberish** (passes 2-3 run the experts
+  unscaled; PPL ~168 vs ~8.5) while still loading and generating at full speed.
+  Only `ggml-org/Inkling-2-Mini-GGUF` is safe on this pin.
+- Sampling: temp 1.0, top_p 1.0, top_k 0, min_p 0.0 (Unsloth run guide).
+
+### Inkling 2 Mini boot command
+
+```bash
+# Manager (preferred): cg server start -m Inkling-2-Mini-IQ4_NL
+# Raw equivalent:
+$LLAMA \
+  -m ~/.local/share/coding-guardrails/models/Inkling-2-Mini-GGUF/Inkling-2-Mini-IQ4_NL.gguf \
+  -c 98304 --host 127.0.0.1 --port 8080 \
+  --jinja --flash-attn auto -ctk q4_0 -ctv q4_0 -ub 128 -np 1
+# ~40-53 tok/s decode, ~19 GB incremental @98K.
 ```
 
 ## Qwen3.5-9B (Default) ⭐

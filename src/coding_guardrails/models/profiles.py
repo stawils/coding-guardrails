@@ -412,6 +412,67 @@ PROFILES: dict[str, ModelProfile] = {
         boot_flags=["--jinja", "--flash-attn", "auto", "-np", "1"],
         context_budget=11000,  # cg's measured tool-calling cliff is ~11K prompts
     ),
+    # ── Inkling 2 Mini (Thinking Machines Lab, 2026-11-20) ──
+    # 26.4B total / 3.4B active, 5.4B effective with the loop. A 24-layer MoE
+    # whose middle 12 layers run THREE times with shared weights (48 layer
+    # applications, arch `inkling2_loop`), 8-of-128 experts, hybrid
+    # sliding-window/full attention, native multimodal, 1M ctx, Apache-2.0.
+    #
+    # - `-ub 128` is load-bearing, not taste: the default ubatch builds a
+    #   compute buffer that reached ~13.5 GB at 128K ctx and made the model
+    #   silently fall back to CPU on other setups (default `-b 2048` also
+    #   tripped OOM reports). Measured VRAM for this profile is in the entry
+    #   below once Step 4 of plans/2026-11-22_inkling-2-mini.md is done.
+    # - NO drafter: Inkling's DSpark draft needs upstream #32218 (open), and
+    #   this pin rejects that GGUF (`markov_w1` shape / unknown head tensors).
+    #   Do not add `--spec-type draft-dspark` here until #32218 merges.
+    # - Sampling from the Unsloth run guide: temp 1.0, top_p 1.0, top_k 0,
+    #   min_p 0.0. `reasoning_effort` in chat_template_kwargs WORKS (measured
+    #   2026-11-22: "none" gave 80 tokens + correct content on a factual ask),
+    #   so the proxy's effort forwarding reaches this template. But a coding
+    #   prompt at max_tokens=700 still spent all 700 on reasoning and returned
+    #   EMPTY content — budget output tokens generously for agentic turns.
+    #   The template also preserves reasoning across turns by default
+    #   (`--no-reasoning-preserve` disables it) — that costs prompt tokens in
+    #   multi-turn, which is what context_budget has to survive.
+    # - Measured decode 2026-11-22: 53 t/s @32K, 30 t/s @163K, ~1.3 s for a
+    #   clean tool call. Tool calls come out as proper OpenAI tool_calls.
+    # - Cost is PREFILL, not decode: 426 t/s prefill on a 19K prompt (~45 s to
+    #   first token at 19K from cold, ~150 s at 98K) vs 39-42 t/s decode. A
+    #   long agent transcript is expensive per turn; llama-server's prompt
+    #   cache only helps the shared prefix.
+    # - PPL 2026-11-22: 6.7260 (-fa off) / 6.7618 (-fa on) on cg's own docs,
+    #   i.e. upstream CUDA-NaN bug #32710 does NOT reproduce on this 3090 Ti
+    #   (SM 86) without its `-ncmoe 8` flag.
+    "Inkling-2-Mini-IQ4_NL": ModelProfile(
+        name="Inkling-2-Mini-IQ4_NL",
+        family="Inkling2",
+        quant="IQ4_NL",
+        file_size_gb=17.63,
+        # MEASURED 2026-11-22 (RTX 3090 Ti, 2.1 GB desktop baseline, q4_0 KV,
+        # -ub 128): 20,070 MiB used @32K / 20,905 @98K / 21,030 @163K →
+        # 17.9-18.9 GB incremental. 16.33 GB of weights land on CUDA0 and
+        # 0.47 GB stays host-mapped (49/49 layers offloaded either way).
+        # The compute buffer is the ctx-driven term: 838 MiB @32K → 2,422 @98K
+        # (default ubatch instead reached ~13.5 GB at 128K on other setups and
+        # silently pushed the model onto the CPU — hence -ub 128 in boot_flags).
+        vram_required_gb=19.0,
+        context_tokens=98304,  # MEASURED: boots + generates with ~2.1 GB free
+        context_budget=73728,  # MEASURED 2026-11-22: probe_longctx.py against
+        # :8092 direct held tool-calling 10/10 from 2K to 98K — no prose
+        # fallback, no empty content, finish_reason=tool_calls at every size.
+        # This is the OPPOSITE of the base Qwen3.8-27B cliff; do not inherit it.
+        # The probe proves tool-call SHAPE only — long-ctx ANSWER QUALITY is
+        # still unmeasured, which is why this sits at 75% of the window rather
+        # than at the ceiling.
+        architecture="moe",
+        active_params_b=5.4,  # includes the 3 passes; 3.4B unique weights/token
+        swe_bench_verified=79.2,  # vendor: SWE-bench Verified (bash only)
+        sampling={"temperature": 1.0, "top_k": 0, "top_p": 1.0, "min_p": 0.0},
+        boot_flags=["--jinja", "--flash-attn", "auto",
+                    "-ctk", "q4_0", "-ctv", "q4_0",
+                    "-ub", "128", "-np", "1"],
+    ),
 }
 # fmt: on
 

@@ -27,12 +27,23 @@ logger = logging.getLogger("coding_guardrails.server.version")
 #: lands DSpine; the only thing cg depends on is that commit being an ancestor.
 PINNED_REPO = "https://github.com/Ajay9o9/llama.cpp.git"
 
-#: Exact commit cg builds against. ggml-org master 0.9.0-dev (2026-11-08) +
+#: Exact commit cg builds against. ggml-org master 0.9.0-dev (2026-11-21) +
 #: the DSpine commit. Keeps everything the previous pin carried (gemma-4
-#: tool-call fix, qwen35/flint/lfm3 archs) and adds DSpine draft support.
-#: Build 2026-11-09.
-PINNED_COMMIT = "d493f841b20241606c47a4e0537d3c786b5cf50b"
-PINNED_SHORT = "d493f84"
+#: tool-call fix, qwen35/flint/lfm3 archs, DSpine draft support) and adds the
+#: `inkling2_loop` architecture (Inkling 2 Mini, upstream #32694 @ b12600 —
+#: verified an ancestor of this branch, so no fork work was needed).
+#: Build 2026-11-22.
+#:
+#: Still missing upstream #32704 (`inkling2_loop` re-shares the loop slots
+#: after the NVFP4 scale pass, merged as 690b87d — 10 commits ahead of this
+#: branch). That bug affects **Unsloth NVFP4 quants only**: their passes 2-3
+#: run the experts unscaled and the output is gibberish (PPL ~168 vs 8.5)
+#: while still loading and generating at normal speed. ggml-org quants are
+#: unaffected (PPL 7.6931 before and after), so Inkling 2 Mini must be served
+#: from `ggml-org/Inkling-2-Mini-GGUF` on this pin. Bump past 690b87d (or to
+#: ggml-org itself once DSpine PR #31941 merges) to unlock the UD quants.
+PINNED_COMMIT = "4703b7d6ffc3a5978f9b6956ad2420052e172f8b"
+PINNED_SHORT = "4703b7d6"
 
 
 def installed_commit() -> str | None:
